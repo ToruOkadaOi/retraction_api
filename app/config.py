@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
-class Settings(BaseSettings): # need to look more into pydant-settings
+class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/retraction_watch.db"
     csv_path: Path = Path("data/retraction_watch.csv")

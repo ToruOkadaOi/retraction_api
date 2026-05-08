@@ -64,8 +64,9 @@ class RetractionReason(Base):
     record_id: Mapped[int] = mapped_column(ForeignKey("retractions.record_id"), index=True)
 
     retraction: Mapped["Retraction"] = relationship(
-    back_populates = "reasons"
+        back_populates="reasons"
     )
+
 
 class RetractionSubject(Base):
     __tablename__ = "retraction_subjects"
@@ -75,5 +76,5 @@ class RetractionSubject(Base):
     record_id: Mapped[int] = mapped_column(ForeignKey("retractions.record_id"), index=True)
 
     retraction: Mapped["Retraction"] = relationship(
-    back_populates = "subjects"
+        back_populates="subjects"
     )
