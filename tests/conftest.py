@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,14 +25,14 @@ def _seed():
     from app.models import Retraction, RetractionCountry, RetractionReason
 
     session = TestingSessionLocal()
-    r = Retraction(
+    r1 = Retraction(
         record_id=1,
         title="Test Article About Cancer Research",
         journal="Test Journal",
         publisher="Test Publisher",
         article_type="Research Article",
         retraction_nature="Retraction",
-        retraction_date=None,
+        retraction_date=date(2020, 6, 15),
         retraction_doi="10.1000/test.doi",
         retraction_pubmed_id=12345678,
         paywalled="No",
@@ -40,10 +41,31 @@ def _seed():
         urls="https://example.com",
         authors_raw="John Doe;Jane Smith",
     )
-    session.add(r)
+    session.add(r1)
     session.add(RetractionCountry(record_id=1, country="USA"))
     session.add(RetractionCountry(record_id=1, country="UK"))
     session.add(RetractionReason(record_id=1, reason="Fake Data"))
+
+    r2 = Retraction(
+        record_id=2,
+        title="A Study on Climate Change",
+        journal="Nature Climate",
+        publisher="Springer",
+        article_type=None,
+        retraction_nature="Expression of Concern",
+        retraction_date=date(2021, 3, 10),
+        retraction_doi=None,
+        retraction_pubmed_id=None,
+        paywalled="Yes",
+        notes=None,
+        institution=None,
+        urls=None,
+        authors_raw="Alice Smith",
+    )
+    session.add(r2)
+    session.add(RetractionCountry(record_id=2, country="Canada"))
+    session.add(RetractionReason(record_id=2, reason="Results Unreliable"))
+
     session.commit()
     session.close()
 
