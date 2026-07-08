@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -82,6 +82,19 @@ def override_get_db() -> Generator:
 def setup_db():
     Base.metadata.create_all(bind=engine)
     _seed()
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS retractions_fts USING fts5("
+                "title, journal, authors_raw, "
+                "content=retractions, content_rowid=record_id"
+                ")"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO retractions_fts(retractions_fts) VALUES('rebuild')")
+        )
+        conn.commit()
     yield
     Base.metadata.drop_all(bind=engine)
 
