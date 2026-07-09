@@ -6,23 +6,14 @@ A REST API for querying the [Retraction Watch](https://retractionwatch.com/) dat
 
 - List and filter articles by journal, publisher, retraction nature, and year
 - Look up a specific article by Retraction DOI or PubMed ID
-- Full-text search across titles, journals, and authors (SQLite FTS5)
+- Full-text search across titles, journals, and authors
 - Aggregate stats: top journals, retraction reasons, and countries by count
 - Paginated responses (configurable skip/limit, capped at 100 per page)
 - Interactive OpenAPI docs at `/docs`
 
-## Stack
+## Live API
 
-| Component | Technology |
-|-----------|-----------|
-| Language | Python >= 3.10 |
-| Framework | FastAPI >= 0.109.0 |
-| Server | Uvicorn |
-| ORM | SQLAlchemy >= 2.0 |
-| Validation | Pydantic >= 2.5 |
-| Database | SQLite (FTS5 full-text search) |
-| Data processing | Pandas |
-| Testing | pytest + httpx |
+Deployed at - https://retraction-api.onrender.com
 
 ## Getting started
 
