@@ -12,6 +12,11 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
+RUN mkdir -p data && \
+    CSV_PATH=retraction_watch.csv \
+    DATABASE_URL=sqlite:///./data/retraction_watch.db \
+    python scripts/ingest_csv.py
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
