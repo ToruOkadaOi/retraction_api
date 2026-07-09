@@ -1,0 +1,35 @@
+name: Sync Retraction Data
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest CSV from retraction_watch_data
+        run: |
+          curl -sL -o retraction_watch.csv \
+            https://raw.githubusercontent.com/ToruOkadaOi/retraction_watch_data/main/retraction_watch.csv
+
+      - name: Check if CSV changed
+        id: check
+        run: |
+          if ! git diff --quiet retraction_watch.csv; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add retraction_watch.csv
+          git commit -m "chore: update retraction watch data"
+          git push

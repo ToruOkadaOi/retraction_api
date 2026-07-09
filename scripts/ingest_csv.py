@@ -5,10 +5,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy import text
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
-from app.database import SessionLocal, create_tables
+from app.database import FTS_TABLE_DDL, SessionLocal, create_tables
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
 
 BATCH_SIZE = 500
@@ -52,6 +54,13 @@ def ingest():
 
     create_tables()
     session = SessionLocal()
+
+    # Clear existing data to prevent duplicates on re-run
+    session.query(RetractionSubject).delete()
+    session.query(RetractionReason).delete()
+    session.query(RetractionCountry).delete()
+    session.query(Retraction).delete()
+    session.commit()
 
     row_count = 0
     skipped = 0
@@ -116,7 +125,12 @@ def ingest():
                 session.add_all(batch)
                 session.commit()
 
-        print(f"\nIngestion complete:")
+        session.execute(text("DROP TABLE IF EXISTS retractions_fts"))
+        session.execute(text(FTS_TABLE_DDL))
+        session.execute(text("INSERT INTO retractions_fts(retractions_fts) VALUES('rebuild')"))
+        session.commit()
+
+        print("\nIngestion complete:")
         print(f"  Rows loaded: {row_count}")
         print(f"  Rows skipped: {skipped}")
 
@@ -124,7 +138,7 @@ def ingest():
         countries = session.query(RetractionCountry).count()
         reasons = session.query(RetractionReason).count()
         subjects = session.query(RetractionSubject).count()
-        print(f"\nDatabase totals:")
+        print("\nDatabase totals:")
         print(f"  retractions: {count}")
         print(f"  retraction_countries: {countries}")
         print(f"  retraction_reasons: {reasons}")
