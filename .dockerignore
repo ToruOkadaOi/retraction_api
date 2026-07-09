@@ -3,7 +3,6 @@ __pycache__/
 .git/
 .gitignore
 .env
-*.db
 retraction_watch.csv
 tests/
 .dockerignore
