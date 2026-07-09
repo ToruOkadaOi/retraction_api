@@ -13,7 +13,7 @@ A REST API for querying the [Retraction Watch](https://retractionwatch.com/) dat
 
 ## Live API
 
-Deployed at - https://retraction-api.onrender.com
+Deployed at - https://retraction-api.onrender.com/docs
 
 ## Getting started
 
