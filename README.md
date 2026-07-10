@@ -13,7 +13,7 @@ A REST API for querying the [Retraction Watch](https://retractionwatch.com/) dat
 
 ## Live API
 
-Deployed at - https://retraction-api.onrender.com/docs
+Deployed at - [https://retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
 
 ## Getting started
 
@@ -71,6 +71,9 @@ python scripts/ingest_csv.py
 This reads `retraction_watch.csv`, parses dates, DOIs, PubMed IDs, and semicolon-delimited fields (countries, reasons, subjects, authors), and inserts records in batches of 500. Sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) get converted to `NULL`.
 
 The CSV bundled here is a static snapshot and won't update itself. For a more current copy, check out [retraction_watch_data](https://github.com/ToruOkadaOi/retraction_watch_data), swap it in at `data/retraction_watch.csv`, and re-run the ingestion script.
+
+<details>
+<summary><strong>API reference</strong></summary>
 
 ## API reference
 
@@ -248,6 +251,8 @@ Top N countries by retraction count.
 ]
 ```
 
+</details>
+
 ## Database model
 
 Four tables:
@@ -262,9 +267,12 @@ Four tables:
 
 Semicolon-delimited CSV fields (authors, URLs, institutions) are stored as text in `retractions` and split into lists when serialized in API responses.
 
+<details>
+<summary><strong>Project structure</strong></summary>
+
 ## Project structure
 
-```
+```text
 app/
   main.py          -- FastAPI app entry point, CORS, lifespan, router registration
   config.py        -- Pydantic settings (DATABASE_URL, CSV_PATH, DEBUG, etc.)
@@ -290,13 +298,13 @@ tests/
   test_statistics.py
 ```
 
+</details>
+
 ## Testing
 
 ```bash
 pytest tests/
 ```
-
-Tests run against an in-memory SQLite database with seed data, overriding the database dependency through FastAPI's dependency injection.
 
 ## Linting
 
