@@ -2,6 +2,8 @@
 
 A REST API for querying the [Retraction Watch](https://retractionwatch.com/) database, a curated repository of retractions, expressions of concern, and corrections to academic and scientific articles. Built with FastAPI and SQLite.
 
+**Live API** — [https://retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
+
 ## What it does
 
 - List and filter articles by journal, publisher, retraction nature, and year
@@ -17,8 +19,6 @@ Deployed at - [https://retraction-api.onrender.com/docs](https://retraction-api.
 
 ## Getting started
 
-Clone and install:
-
 ```bash
 git clone <repo-url>
 cd retraction_api
@@ -26,19 +26,12 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Configure the environment (optional, defaults work fine since the repo ships with a pre-built `retractions.db`):
-
 ```bash
 cp .env.example .env
-```
-
-Run it:
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-Then open [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive docs.
+Open [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ## Docker
 
@@ -84,54 +77,32 @@ pip install -e ".[dev]"
 python -m mcp_server
 ```
 
-Set `RETRACTION_API_URL` in `.env` to override the target.
+Set `RETRACTION_API_URL` in `.env` to override.
 
 ## Data ingestion
-
-The database can be rebuilt from the raw CSV at any time:
 
 ```bash
 python scripts/ingest_csv.py
 ```
 
-This reads `retraction_watch.csv`, parses dates, DOIs, PubMed IDs, and semicolon-delimited fields (countries, reasons, subjects, authors), and inserts records in batches of 500. Sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) get converted to `NULL`.
-
-The CSV bundled here is a static snapshot and won't update itself. For a more current copy, check out [retraction_watch_data](https://github.com/ToruOkadaOi/retraction_watch_data), swap it in at `data/retraction_watch.csv`, and re-run the ingestion script.
+Parses dates, DOIs, PubMed IDs, and semicolon-delimited fields, inserts in batches of 500. Sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) get converted to `NULL`.
 
 <details>
 <summary><strong>API reference</strong></summary>
 
 ## API reference
 
-Base URL: `http://localhost:8000`
-
----
+Base URL: [https://retraction-api.onrender.com](https://retraction-api.onrender.com)
 
 ### `GET /health`
 
-Health check, verifies database connectivity.
-
 ```json
-{
-  "status": "ok",
-  "database": "ok"
-}
+{"status": "ok", "database": "ok"}
 ```
-
----
 
 ### `GET /articles`
 
-List articles with optional filters and pagination.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `skip` | int | 0 | Number of records to skip |
-| `limit` | int | 20 | Max records to return (<= 100) |
-| `journal` | str | none | Filter by exact journal name |
-| `publisher` | str | none | Filter by exact publisher name |
-| `retraction_nature` | str | none | Filter by retraction nature (e.g. `Retraction`, `Expression of Concern`) |
-| `year` | int | none | Filter by retraction year (4-digit) |
+Parameters: `skip` (0), `limit` (20, ≤100), `journal`, `publisher`, `retraction_nature`, `year`.
 
 ```json
 {
@@ -151,137 +122,37 @@ List articles with optional filters and pagination.
 }
 ```
 
----
-
 ### `GET /articles/{record_id}`
 
-Full detail for a single article by its record ID.
-
-**Path parameter:** `record_id` (int)
-
-```json
-{
-  "record_id": 123,
-  "title": "Article Title",
-  "journal": "Journal Name",
-  "retraction_nature": "Retraction",
-  "retraction_date": "2023-01-15",
-  "publisher": "Publisher Name",
-  "article_type": "Research Article",
-  "retraction_doi": "10.1000/retraction-doi",
-  "retraction_pubmed_id": 12345678,
-  "original_paper_date": "2022-06-01",
-  "original_paper_doi": "10.1000/original-doi",
-  "original_paper_pubmed_id": 87654321,
-  "paywalled": "No",
-  "notes": "Some notes about the retraction",
-  "institution": "University Name",
-  "urls": ["https://example.com"],
-  "authors": ["Author One", "Author Two"],
-  "countries": ["United States"],
-  "reasons": ["Fake Data"],
-  "subjects": ["Biology"]
-}
-```
-
-Returns 404 if the record ID doesn't exist.
-
----
+Full detail with authors, countries, reasons, subjects, DOIs, PubMed IDs, and more. Returns 404 if not found.
 
 ### `GET /lookup/doi/{doi}`
 
-Look up an article by its Retraction DOI.
-
-**Path parameter:** `doi` (str, catch-all path)
-
-Response is the same `ArticleDetail` shape as `GET /articles/{record_id}`. Returns 404 if the DOI isn't found.
-
----
+Look up by retraction DOI. Same response as `/articles/{record_id}`.
 
 ### `GET /lookup/pubmed/{pubmed_id}`
 
-Look up an article by its Retraction PubMed ID.
-
-**Path parameter:** `pubmed_id` (int)
-
-Response is the same `ArticleDetail` shape as `GET /articles/{record_id}`. Returns 404 if the PubMed ID isn't found.
-
----
+Look up by retraction PubMed ID. Same response as `/articles/{record_id}`.
 
 ### `GET /search`
 
-Full-text search across article titles, journals, and authors.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `q` | str | required | Search query (min 1 character) |
-| `skip` | int | 0 | Number of results to skip |
-| `limit` | int | 20 | Max results to return (<= 100) |
-
-Uses SQLite FTS5 with prefix matching and AND logic. Special FTS characters (`"`, `(`, `)`, `+`, `-`, `*`, `^`) are sanitized automatically.
-
-```
-GET /search?q=cancer research
-```
-
-This searches for articles matching both `cancer*` and `research*`. Response format matches `GET /articles`, with `ArticleListItem` entries.
-
----
+Parameters: `q` (required), `skip`, `limit`. Uses SQLite FTS5 with prefix matching and AND logic.
 
 ### `GET /stats/top-journals`
 
-Top N journals with the most retractions.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | int | 10 | Number of results (<= 100) |
-
-```json
-[
-  {"journal": "Journal of Fake Research", "count": 42},
-  {"journal": "Another Journal", "count": 18}
-]
-```
-
----
+Top N journals by retraction count. Parameter: `limit` (10, ≤100).
 
 ### `GET /stats/top-reasons`
 
-Top N retraction reasons.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | int | 10 | Number of results (<= 100) |
-
-```json
-[
-  {"reason": "Fake Data", "count": 150},
-  {"reason": "Compromised Peer Review", "count": 87}
-]
-```
-
----
+Top N retraction reasons. Parameter: `limit` (10, ≤100).
 
 ### `GET /stats/top-countries`
 
-Top N countries by retraction count.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | int | 10 | Number of results (<= 100) |
-
-```json
-[
-  {"country": "United States", "count": 200},
-  {"country": "China", "count": 175}
-]
-```
+Top N countries by retraction count. Parameter: `limit` (10, ≤100).
 
 </details>
 
 ## Database model
-
-Four tables:
 
 | Table | Description |
 |-------|-------------|
@@ -291,46 +162,18 @@ Four tables:
 | `retraction_subjects` | Many-to-many: subject classifications |
 | `retractions_fts` | FTS5 virtual table for full-text search over title, journal, and authors_raw |
 
-Semicolon-delimited CSV fields (authors, URLs, institutions) are stored as text in `retractions` and split into lists when serialized in API responses.
-
-<details>
-<summary><strong>Project structure</strong></summary>
-
 ## Project structure
 
 ```text
 app/
-  main.py          -- FastAPI app entry point, CORS, lifespan, router registration
-  config.py        -- Pydantic settings (DATABASE_URL, CSV_PATH, DEBUG, etc.)
-  database.py      -- SQLAlchemy engine, session factory, table creation, FTS5 setup
-  models.py        -- ORM models (Retraction, RetractionCountry, RetractionReason, RetractionSubject)
-  schemas.py       -- Pydantic request/response schemas (ArticleListItem, ArticleDetail, PaginatedResponse)
-  serializers.py   -- Converts ORM records into detailed API responses
-  dependencies.py  -- get_db() dependency yielding a SQLAlchemy session
-  routes/
-    health.py      -- GET /health
-    articles.py    -- GET /articles, GET /articles/{record_id}
-    lookup.py      -- GET /lookup/doi/{doi}, /lookup/pubmed/{pubmed_id}
-    search.py      -- GET /search?q=...
-    statistics.py  -- GET /stats/top-journals, /stats/top-reasons, /stats/top-countries
+  main.py, config.py, database.py, models.py, schemas.py, serializers.py, dependencies.py
+  routes/ -- health.py, articles.py, lookup.py, search.py, statistics.py
 mcp_server/
-  api_client.py    -- Validated async HTTP client for the REST API
-  config.py        -- MCP API URL and timeout settings
-  server.py        -- Read-only FastMCP tool definitions
-  __main__.py      -- stdio entry point
+  api_client.py, config.py, server.py, __main__.py
 scripts/
-  ingest_csv.py    -- CSV to SQLite ingestion pipeline
-  explore_csv.py   -- Exploratory CSV analysis
-  validate_csv.py  -- Validates source CSV structure and required fields
+  ingest_csv.py, explore_csv.py, validate_csv.py
 tests/
-  conftest.py      -- In-memory SQLite fixtures, seed data, TestClient with dependency override
-  test_health.py
-  test_articles.py
-  test_lookup.py
-  test_search.py
-  test_statistics.py
-  test_mcp_api_client.py
-  test_mcp_server.py
+  conftest.py + test_*.py files
 ```
 
 </details>
@@ -346,5 +189,3 @@ pytest tests/
 ```bash
 ruff check .
 ```
-
-Config lives in `pyproject.toml`.

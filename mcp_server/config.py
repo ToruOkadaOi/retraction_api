@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MCPSettings(BaseSettings):
-    api_url: str = "http://localhost:8000"
+    api_url: str = "https://retraction-api.onrender.com"
     api_timeout: float = Field(default=10.0, gt=0)
 
     model_config = SettingsConfigDict(
