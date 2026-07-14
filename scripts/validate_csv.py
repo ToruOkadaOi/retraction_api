@@ -38,6 +38,8 @@ def validate_csv(path: Path) -> int:
 
         row_count = 0
         for line_number, row in enumerate(reader, start=2):
+            if not any((value or "").strip() for value in row.values()):
+                continue
             row_count += 1
             if not row["Record ID"].strip():
                 raise ValueError(f"CSV row {line_number} has no Record ID")
