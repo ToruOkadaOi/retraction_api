@@ -21,6 +21,11 @@ TestingSessionLocal = sessionmaker(
 )
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 def _seed():
     from app.models import Retraction, RetractionCountry, RetractionReason
 

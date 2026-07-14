@@ -313,6 +313,11 @@ app/
     lookup.py      -- GET /lookup/doi/{doi}, /lookup/pubmed/{pubmed_id}
     search.py      -- GET /search?q=...
     statistics.py  -- GET /stats/top-journals, /stats/top-reasons, /stats/top-countries
+mcp_server/
+  api_client.py    -- Validated async HTTP client for the REST API
+  config.py        -- MCP API URL and timeout settings
+  server.py        -- Read-only FastMCP tool definitions
+  __main__.py      -- stdio entry point
 scripts/
   ingest_csv.py    -- CSV to SQLite ingestion pipeline
   explore_csv.py   -- Exploratory CSV analysis
@@ -324,6 +329,8 @@ tests/
   test_lookup.py
   test_search.py
   test_statistics.py
+  test_mcp_api_client.py
+  test_mcp_server.py
 ```
 
 </details>

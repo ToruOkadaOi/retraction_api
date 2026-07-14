@@ -2,5 +2,6 @@
 notes.md
 __pycache__/
 *.pyc
+*.egg-info/
 retractions.db
 *.db
