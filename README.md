@@ -2,8 +2,6 @@
 
 A REST API for querying the [Retraction Watch](https://retractionwatch.com/) database, a curated repository of retractions, expressions of concern, and corrections to academic and scientific articles. Built with FastAPI and SQLite.
 
-**Live API** — [https://retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
-
 ## What it does
 
 - List and filter articles by journal, publisher, retraction nature, and year
