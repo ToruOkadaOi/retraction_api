@@ -5,12 +5,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import text
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
-from app.database import FTS_TABLE_DDL, SessionLocal, create_tables
+from app.database import SessionLocal, create_tables, ensure_fts
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
 
 BATCH_SIZE = 500
@@ -125,10 +123,7 @@ def ingest():
                 session.add_all(batch)
                 session.commit()
 
-        session.execute(text("DROP TABLE IF EXISTS retractions_fts"))
-        session.execute(text(FTS_TABLE_DDL))
-        session.execute(text("INSERT INTO retractions_fts(retractions_fts) VALUES('rebuild')"))
-        session.commit()
+        ensure_fts(rebuild=True)
 
         print("\nIngestion complete:")
         print(f"  Rows loaded: {row_count}")

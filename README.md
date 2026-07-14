@@ -58,7 +58,33 @@ Environment variables, loaded from `.env`:
 | `CSV_PATH` | `data/retraction_watch.csv` | Path to source CSV for ingestion |
 | `DEBUG` | `false` | Enable debug mode |
 | `API_TITLE` | `Retraction Watch API` | OpenAPI title |
-| `API_VERSION` | `0.0.1` | API version string |
+| `API_VERSION` | `0.1.0` | API version string |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:8000` | Comma-separated allowed browser origins |
+| `RETRACTION_API_URL` | `https://retraction-api.onrender.com` | Base URL used by the MCP server |
+| `RETRACTION_API_TIMEOUT` | `10` | MCP-to-API request timeout in seconds |
+
+## MCP server
+
+The repo includes a read-only MCP server for use with MCP clients (Claude Desktop, OpenCode, VS Code). It connects to the deployed API by default.
+
+| Tool | Result |
+|------|--------|
+| `health_check` | API and database status |
+| `list_articles` | Filtered, paginated article summaries |
+| `get_article` | Full article details by record ID |
+| `lookup_article_by_doi` | Full article details by retraction DOI |
+| `lookup_article_by_pubmed` | Full article details by retraction PubMed ID |
+| `search_articles` | Ranked, paginated article summaries |
+| `get_top_journals` | Journals with the most retractions |
+| `get_top_reasons` | Most frequently recorded retraction reasons |
+| `get_top_countries` | Countries associated with the most retractions |
+
+```bash
+pip install -e ".[dev]"
+python -m mcp_server
+```
+
+Set `RETRACTION_API_URL` in `.env` to override the target.
 
 ## Data ingestion
 
@@ -279,6 +305,7 @@ app/
   database.py      -- SQLAlchemy engine, session factory, table creation, FTS5 setup
   models.py        -- ORM models (Retraction, RetractionCountry, RetractionReason, RetractionSubject)
   schemas.py       -- Pydantic request/response schemas (ArticleListItem, ArticleDetail, PaginatedResponse)
+  serializers.py   -- Converts ORM records into detailed API responses
   dependencies.py  -- get_db() dependency yielding a SQLAlchemy session
   routes/
     health.py      -- GET /health
@@ -289,6 +316,7 @@ app/
 scripts/
   ingest_csv.py    -- CSV to SQLite ingestion pipeline
   explore_csv.py   -- Exploratory CSV analysis
+  validate_csv.py  -- Validates source CSV structure and required fields
 tests/
   conftest.py      -- In-memory SQLite fixtures, seed data, TestClient with dependency override
   test_health.py

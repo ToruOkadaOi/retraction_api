@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
@@ -18,10 +18,6 @@ class ArticleBase(BaseModel):
     journal: str
     retraction_nature: str
     retraction_date: date | None = None
-
-
-class ArticleCreate(ArticleBase):
-    record_id: int
 
 
 class ArticleListItem(ArticleBase):
@@ -43,10 +39,25 @@ class ArticleDetail(ArticleBase):
     paywalled: str
     notes: str | None = None
     institution: str | None = None
-    urls: list[str] = []
-    authors: list[str] = []
-    countries: list[str] = []
-    reasons: list[str] = []
-    subjects: list[str] = []
+    urls: list[str] = Field(default_factory=list)
+    authors: list[str] = Field(default_factory=list)
+    countries: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class JournalStatistic(BaseModel):
+    journal: str
+    count: int
+
+
+class ReasonStatistic(BaseModel):
+    reason: str
+    count: int
+
+
+class CountryStatistic(BaseModel):
+    country: str
+    count: int

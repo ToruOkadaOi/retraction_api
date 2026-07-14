@@ -1,9 +1,14 @@
 import csv
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CSV_PATH = Path.cwd() / "retraction_watch.csv"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.config import settings
+
+CSV_PATH = settings.csv_path
 
 if not CSV_PATH.exists():
     raise FileNotFoundError(f"CSV file not found at {CSV_PATH}")

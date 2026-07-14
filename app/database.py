@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
@@ -29,15 +29,39 @@ CREATE VIRTUAL TABLE IF NOT EXISTS retractions_fts USING fts5(
 )
 """
 
-def ensure_fts() -> None:
-    with SessionLocal() as session:
-        session.execute(text(FTS_TABLE_DDL))
-        count = (
-            session.execute(text("SELECT COUNT(*) FROM retractions_fts"))
-            .scalar()
-        )
-        if count == 0:
-            session.execute(
+FTS_TRIGGER_DDLS = (
+    """
+    CREATE TRIGGER IF NOT EXISTS retractions_fts_insert AFTER INSERT ON retractions BEGIN
+        INSERT INTO retractions_fts(rowid, title, journal, authors_raw)
+        VALUES (new.record_id, new.title, new.journal, new.authors_raw);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS retractions_fts_delete AFTER DELETE ON retractions BEGIN
+        INSERT INTO retractions_fts(retractions_fts, rowid, title, journal, authors_raw)
+        VALUES ('delete', old.record_id, old.title, old.journal, old.authors_raw);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS retractions_fts_update AFTER UPDATE ON retractions BEGIN
+        INSERT INTO retractions_fts(retractions_fts, rowid, title, journal, authors_raw)
+        VALUES ('delete', old.record_id, old.title, old.journal, old.authors_raw);
+        INSERT INTO retractions_fts(rowid, title, journal, authors_raw)
+        VALUES (new.record_id, new.title, new.journal, new.authors_raw);
+    END
+    """,
+)
+
+
+def ensure_fts(bind: Engine = engine, *, rebuild: bool = False) -> None:
+    with bind.begin() as connection:
+        connection.execute(text(FTS_TABLE_DDL))
+        for trigger_ddl in FTS_TRIGGER_DDLS:
+            connection.execute(text(trigger_ddl))
+
+        indexed_count = connection.execute(text("SELECT COUNT(*) FROM retractions_fts")).scalar_one()
+        article_count = connection.execute(text("SELECT COUNT(*) FROM retractions")).scalar_one()
+        if rebuild or indexed_count != article_count:
+            connection.execute(
                 text("INSERT INTO retractions_fts(retractions_fts) VALUES('rebuild')")
             )
-            session.commit()

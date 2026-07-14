@@ -24,3 +24,12 @@ class TestStatistics:
         data = resp.json()
         # Two countries: USA and UK, both count=1
         assert len(data) >= 2
+
+    def test_statistics_limit(self, client: TestClient):
+        resp = client.get("/stats/top-countries?limit=1")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+
+    def test_statistics_rejects_excessive_limit(self, client: TestClient):
+        resp = client.get("/stats/top-journals?limit=101")
+        assert resp.status_code == 422

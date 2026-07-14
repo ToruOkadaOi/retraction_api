@@ -18,8 +18,11 @@ jobs:
 
       - name: Fetch latest CSV from retraction_watch_data
         run: |
-          curl -sL -o retraction_watch.csv \
+          curl -fsSL -o retraction_watch.csv \
             https://raw.githubusercontent.com/ToruOkadaOi/retraction_watch_data/main/retraction_watch.csv
+
+      - name: Validate downloaded CSV
+        run: python scripts/validate_csv.py retraction_watch.csv
 
       - name: Check if CSV changed
         id: check

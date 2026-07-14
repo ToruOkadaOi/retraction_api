@@ -1,6 +1,8 @@
 from datetime import date
+
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 
 
@@ -17,7 +19,7 @@ class Retraction(Base):
 
     # Nullable
     publisher: Mapped[str | None] = mapped_column(index=True)
-    article_type: Mapped[str | None]                        
+    article_type: Mapped[str | None]
     institution: Mapped[str | None] = mapped_column(Text)
     urls: Mapped[str | None] = mapped_column(Text)
     authors_raw: Mapped[str | None] = mapped_column(Text)

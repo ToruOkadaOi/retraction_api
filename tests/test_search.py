@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from app.models import Retraction
+from tests.conftest import TestingSessionLocal
+
 
 class TestSearch:
     def test_search_by_title(self, client: TestClient):
@@ -40,3 +43,28 @@ class TestSearch:
         data = resp.json()
         assert data["total"] == 2
         assert len(data["items"]) == 1
+
+    def test_fts_tracks_insert_update_and_delete(self, client: TestClient):
+        with TestingSessionLocal() as session:
+            article = Retraction(
+                record_id=3,
+                title="Inserted Discovery",
+                journal="Test Journal",
+                retraction_nature="Retraction",
+                paywalled="No",
+            )
+            session.add(article)
+            session.commit()
+
+            assert client.get("/search?q=Inserted").json()["total"] == 1
+
+            article.title = "Updated Discovery"
+            session.commit()
+
+            assert client.get("/search?q=Inserted").json()["total"] == 0
+            assert client.get("/search?q=Updated").json()["total"] == 1
+
+            session.delete(article)
+            session.commit()
+
+        assert client.get("/search?q=Updated").json()["total"] == 0

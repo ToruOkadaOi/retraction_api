@@ -4,10 +4,10 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.database import Base
+from app.database import Base, ensure_fts
 from app.dependencies import get_db
 from app.main import app
 
@@ -70,7 +70,7 @@ def _seed():
     session.close()
 
 
-def override_get_db() -> Generator:
+def override_get_db() -> Generator[Session, None, None]:
     db = TestingSessionLocal()
     try:
         yield db
@@ -80,22 +80,14 @@ def override_get_db() -> Generator:
 
 @pytest.fixture(autouse=True)
 def setup_db():
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS retractions_fts"))
     Base.metadata.create_all(bind=engine)
     _seed()
-    with engine.connect() as conn:
-        conn.execute(
-            text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS retractions_fts USING fts5("
-                "title, journal, authors_raw, "
-                "content=retractions, content_rowid=record_id"
-                ")"
-            )
-        )
-        conn.execute(
-            text("INSERT INTO retractions_fts(retractions_fts) VALUES('rebuild')")
-        )
-        conn.commit()
+    ensure_fts(engine, rebuild=True)
     yield
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS retractions_fts"))
     Base.metadata.drop_all(bind=engine)
 
 
