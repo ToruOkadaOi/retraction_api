@@ -36,3 +36,14 @@ def test_validate_csv_rejects_empty_data(tmp_path):
 
     with pytest.raises(ValueError, match="no data rows"):
         validate_csv(path)
+
+
+def test_validate_csv_ignores_blank_rows(tmp_path):
+    path = tmp_path / "data.csv"
+    valid_row = dict.fromkeys(REQUIRED_COLUMNS, "value")
+    valid_row["Record ID"] = "1"
+    valid_row["Title"] = "Test article"
+    blank_row = dict.fromkeys(REQUIRED_COLUMNS, "")
+    write_csv(path, sorted(REQUIRED_COLUMNS), [valid_row, blank_row, blank_row])
+
+    assert validate_csv(path) == 1
