@@ -26,6 +26,7 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
+python scripts/ingest_csv.py
 uvicorn app.main:app --reload
 ```
 
@@ -37,7 +38,7 @@ Open [http://localhost:8000/docs](http://localhost:8000/docs).
 docker compose up --build
 ```
 
-Runs on port `8000`. The `data/` directory and `.env` file get mounted into the container.
+The API runs on port `8000` and the MCP endpoint runs at `http://localhost:8001/mcp`. The API database is validated and built into the image; mounting a host `data/` directory would mask that database.
 
 ## Configuration
 
@@ -53,6 +54,11 @@ Environment variables, loaded from `.env`:
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:8000` | Comma-separated allowed browser origins |
 | `RETRACTION_API_URL` | `https://retraction-api.onrender.com` | Base URL used by the MCP server |
 | `RETRACTION_API_TIMEOUT` | `10` | MCP-to-API request timeout in seconds |
+| `RETRACTION_MCP_TRANSPORT` | `stdio` | MCP transport: `stdio` or `streamable-http` |
+| `RETRACTION_MCP_HOST` | `127.0.0.1` | MCP HTTP bind host; use `0.0.0.0` in a container |
+| `RETRACTION_MCP_PORT` | `8000` | MCP HTTP port; hosting platforms may override it with `PORT` |
+| `RETRACTION_MCP_ALLOWED_HOSTS` | empty | Comma-separated HTTP Host allowlist for deployed MCP servers |
+| `RETRACTION_MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser Origin allowlist for deployed MCP servers |
 
 ## MCP server
 
@@ -77,13 +83,28 @@ python -m mcp_server
 
 Set `RETRACTION_API_URL` in `.env` to override.
 
+Local clients use `stdio` by default. To deploy a remote MCP server, build `Dockerfile.mcp` and configure Streamable HTTP:
+
+```bash
+docker build -f Dockerfile.mcp -t retraction-watch-mcp .
+docker run --rm -p 8001:8000 \
+  -e RETRACTION_API_URL=https://retraction-api.onrender.com \
+  -e RETRACTION_MCP_ALLOWED_HOSTS=localhost:8001 \
+  -e RETRACTION_MCP_ALLOWED_ORIGINS=http://localhost:8001 \
+  retraction-watch-mcp
+```
+
+The MCP endpoint is `/mcp`; `/health` is available for deployment health checks. For a public hostname, replace the local allowlists with the exact external host and permitted browser origins. Non-browser MCP clients normally do not send an `Origin` header.
+
 ## Data ingestion
 
 ```bash
 python scripts/ingest_csv.py
 ```
 
-Parses dates, DOIs, PubMed IDs, and semicolon-delimited fields, inserts in batches of 500. Sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) get converted to `NULL`.
+The importer validates the CSV, builds a temporary SQLite database, rebuilds FTS, verifies row counts, foreign keys, triggers, and `PRAGMA integrity_check`, then atomically replaces the configured database. A failed import leaves the live database untouched. It parses dates, DOIs, PubMed IDs, and semicolon-delimited fields in batches of 500; sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) become `NULL`.
+
+Run ingestion while the API is stopped. Atomic file replacement protects the database on disk, but an already-running process may retain connections to the previous SQLite file. Container deployments should build and validate a new image, pass its health check, and then replace the old container.
 
 <details>
 <summary><strong>API reference</strong></summary>

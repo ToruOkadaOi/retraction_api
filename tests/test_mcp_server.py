@@ -70,3 +70,13 @@ async def test_mcp_validates_tool_arguments(mcp_session: ClientSession):
     result = await mcp_session.call_tool("list_articles", {"limit": 101})
 
     assert result.isError is True
+
+
+def test_main_uses_configured_transport(monkeypatch):
+    calls = []
+    monkeypatch.setattr(server.settings, "mcp_transport", "streamable-http")
+    monkeypatch.setattr(server.mcp, "run", lambda transport: calls.append(transport))
+
+    server.main()
+
+    assert calls == ["streamable-http"]

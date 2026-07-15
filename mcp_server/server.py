@@ -1,17 +1,48 @@
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from mcp_server.api_client import RetractionAPIClient
 from mcp_server.config import settings
 
-mcp = FastMCP("Retraction Watch API", json_response=True)
+if settings.mcp_transport == "streamable-http" and not settings.allowed_hosts:
+    raise RuntimeError(
+        "RETRACTION_MCP_ALLOWED_HOSTS is required for Streamable HTTP transport"
+    )
+
+transport_security = (
+    TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.allowed_hosts,
+        allowed_origins=settings.allowed_origins,
+    )
+    if settings.allowed_hosts
+    else None
+)
+
+mcp = FastMCP(
+    "Retraction Watch API",
+    host=settings.mcp_host,
+    port=settings.server_port,
+    stateless_http=True,
+    json_response=True,
+    transport_security=transport_security,
+)
 api_client = RetractionAPIClient(settings.base_url, settings.api_timeout)
 
 Skip = Annotated[int, Field(ge=0, description="Number of results to skip")]
 PageLimit = Annotated[int, Field(ge=1, le=100, description="Maximum results to return")]
 StatsLimit = Annotated[int, Field(ge=1, le=100, description="Maximum statistics to return")]
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def http_health_check(_request: Request) -> JSONResponse:
+    """Return process health for deployment platforms."""
+    return JSONResponse({"status": "ok"})
 
 
 def _dump(value: Any) -> Any:
@@ -104,4 +135,4 @@ async def get_top_countries(limit: StatsLimit = 10) -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    mcp.run(transport="stdio")
+    mcp.run(transport=settings.mcp_transport)

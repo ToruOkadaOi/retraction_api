@@ -4,6 +4,22 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
       - ./.env:/app/.env
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    environment:
+      RETRACTION_API_URL: http://api:8000
+      RETRACTION_MCP_TRANSPORT: streamable-http
+      RETRACTION_MCP_HOST: 0.0.0.0
+      RETRACTION_MCP_PORT: 8000
+      RETRACTION_MCP_ALLOWED_HOSTS: localhost:8001,127.0.0.1:8001,mcp:8000
+      RETRACTION_MCP_ALLOWED_ORIGINS: http://localhost:8001,http://127.0.0.1:8001
+    ports:
+      - "8001:8000"
+    depends_on:
+      - api
     restart: unless-stopped

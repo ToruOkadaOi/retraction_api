@@ -1,0 +1,16 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md LICENSE ./
+COPY app ./app
+COPY mcp_server ./mcp_server
+
+RUN pip install --no-cache-dir .
+
+ENV RETRACTION_MCP_TRANSPORT=streamable-http \
+    RETRACTION_MCP_HOST=0.0.0.0
+
+EXPOSE 8000
+
+CMD ["python", "-m", "mcp_server"]
