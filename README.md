@@ -2,23 +2,87 @@
 
 A REST API for querying the [Retraction Watch](https://retractionwatch.com/) database, a curated repository of retractions, expressions of concern, and corrections to academic and scientific articles. Built with FastAPI and SQLite.
 
+## Hosted services
+
+### API
+
+- Interactive documentation: [retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
+- Base URL: [retraction-api.onrender.com](https://retraction-api.onrender.com)
+- Health check: [retraction-api.onrender.com/health](https://retraction-api.onrender.com/health)
+
+### MCP server
+
+- Streamable HTTP endpoint: `https://retraction-watch-mcp.onrender.com/mcp`
+- Health check: [retraction-watch-mcp.onrender.com/health](https://retraction-watch-mcp.onrender.com/health)
+
+The free Render instance may sleep while idle, so the first request can take roughly 30–60 seconds.
+
+#### VS Code
+
+Create `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "retraction-watch": {
+      "type": "http",
+      "url": "https://retraction-watch-mcp.onrender.com/mcp"
+    }
+  }
+}
+```
+
+#### OpenCode
+
+Add this to `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "retraction-watch": {
+      "type": "remote",
+      "url": "https://retraction-watch-mcp.onrender.com/mcp"
+    }
+  }
+}
+```
+
+#### Claude Desktop
+
+Open **Settings → Connectors** and add:
+
+```text
+https://retraction-watch-mcp.onrender.com/mcp
+```
+
 ## What it does
 
 - List and filter articles by journal, publisher, retraction nature, and year
 - Look up a specific article by Retraction DOI or PubMed ID
 - Full-text search across titles, journals, and authors
-- Aggregate stats: top journals, retraction reasons, and countries by count
-- Paginated responses (configurable skip/limit, capped at 100 per page)
-- Interactive OpenAPI docs at `/docs`
+- Aggregate statistics for journals, retraction reasons, and countries
+- Return paginated responses with configurable `skip` and `limit` parameters, capped at 100 records per page
+- Provide interactive OpenAPI documentation at `/docs`
 
-## Live API
+## MCP tools
 
-Deployed at - [https://retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
+| Tool | Result |
+|---|---|
+| `health_check` | API and database status |
+| `list_articles` | Filtered, paginated article summaries |
+| `get_article` | Full article details by record ID |
+| `lookup_article_by_doi` | Full article details by retraction DOI |
+| `lookup_article_by_pubmed` | Full article details by retraction PubMed ID |
+| `search_articles` | Ranked, paginated article summaries |
+| `get_top_journals` | Journals with the most retractions |
+| `get_top_reasons` | Most frequently recorded retraction reasons |
+| `get_top_countries` | Countries associated with the most retractions |
 
-## Getting started
+<details>
+<summary><strong>Getting started locally</strong></summary>
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ToruOkadaOi/retraction_api.git
 cd retraction_api
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -32,20 +96,39 @@ uvicorn app.main:app --reload
 
 Open [http://localhost:8000/docs](http://localhost:8000/docs).
 
-## Docker
+</details>
+
+<details>
+<summary><strong>Docker</strong></summary>
+
+Start the API locally:
 
 ```bash
 docker compose up --build
 ```
 
-The API runs on port `8000` and the MCP endpoint runs at `http://localhost:8001/mcp`. The API database is validated and built into the image; mounting a host `data/` directory would mask that database.
+The API runs on port `8000`; the MCP endpoint runs at `http://localhost:8001/mcp`.
 
-## Configuration
+The API database is validated and built into the image. Do not mount a host `data/` directory, as it would mask the database included in the image.
 
-Environment variables, loaded from `.env`:
+Run the MCP server independently:
+
+```bash
+docker build -f Dockerfile.mcp -t retraction-watch-mcp .
+docker run --rm -p 8001:8000 \
+  -e RETRACTION_MCP_HOST=0.0.0.0 \
+  retraction-watch-mcp
+```
+
+</details>
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+Environment variables are loaded from `.env`:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `DATABASE_URL` | `sqlite:///./data/retraction_watch.db` | SQLAlchemy database URL |
 | `CSV_PATH` | `data/retraction_watch.csv` | Path to source CSV for ingestion |
 | `DEBUG` | `false` | Enable debug mode |
@@ -60,73 +143,27 @@ Environment variables, loaded from `.env`:
 | `RETRACTION_MCP_ALLOWED_HOSTS` | empty | Comma-separated HTTP Host allowlist for deployed MCP servers |
 | `RETRACTION_MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser Origin allowlist for deployed MCP servers |
 
-## MCP server
+For public MCP deployments, set `RETRACTION_MCP_ALLOWED_HOSTS` to the public hostname, such as `retraction-watch-mcp.onrender.com`, to enable DNS rebinding protection.
 
-The repo includes a read-only MCP server for use with MCP clients (Claude Desktop, OpenCode, VS Code). It connects to the deployed API by default.
+</details>
 
-| Tool | Result |
-|------|--------|
-| `health_check` | API and database status |
-| `list_articles` | Filtered, paginated article summaries |
-| `get_article` | Full article details by record ID |
-| `lookup_article_by_doi` | Full article details by retraction DOI |
-| `lookup_article_by_pubmed` | Full article details by retraction PubMed ID |
-| `search_articles` | Ranked, paginated article summaries |
-| `get_top_journals` | Journals with the most retractions |
-| `get_top_reasons` | Most frequently recorded retraction reasons |
-| `get_top_countries` | Countries associated with the most retractions |
-
-```bash
-pip install -e ".[dev]"
-python -m mcp_server
-```
-
-Set `RETRACTION_API_URL` in `.env` to override.
-
-### Hosted MCP
-
-Also deployed over Streamable HTTP:
-
-- Endpoint: `https://retraction-watch-mcp.onrender.com/mcp`
-- Health: `https://retraction-watch-mcp.onrender.com/health`
-
-VS Code `.vscode/mcp.json`:
-
-```json
-{"servers": {"retraction-watch": {"type": "http", "url": "https://retraction-watch-mcp.onrender.com/mcp"}}}
-```
-
-OpenCode `opencode.json`:
-
-```json
-{"mcp": {"retraction-watch": {"type": "remote", "url": "https://retraction-watch-mcp.onrender.com/mcp"}}}
-```
-
-Claude Desktop: Settings > Connectors > add the endpoint URL.
-
-Notes: the MCP endpoint path is `/mcp`; `/health` is available for deployment health checks. To enable DNS rebinding protection, set `RETRACTION_MCP_ALLOWED_HOSTS` to the public hostname (e.g. `retraction-watch-mcp.onrender.com`). The free Render instance sleeps when idle, so the first connection can take ~30-60s.
-
-Local Docker run:
-
-```bash
-docker build -f Dockerfile.mcp -t retraction-watch-mcp .
-docker run --rm -p 8001:8000 -e RETRACTION_MCP_HOST=0.0.0.0 retraction-watch-mcp
-```
-
-## Data ingestion
+<details>
+<summary><strong>Data ingestion</strong></summary>
 
 ```bash
 python scripts/ingest_csv.py
 ```
 
-The importer validates the CSV, builds a temporary SQLite database, rebuilds FTS, verifies row counts, foreign keys, triggers, and `PRAGMA integrity_check`, then atomically replaces the configured database. A failed import leaves the live database untouched. It parses dates, DOIs, PubMed IDs, and semicolon-delimited fields in batches of 500; sentinel values (`"unavailable"` for DOIs, `"0"` for PubMed IDs) become `NULL`.
+The importer validates the CSV, builds a temporary SQLite database, rebuilds FTS indexes, verifies row counts, foreign keys, triggers, and `PRAGMA integrity_check`, then atomically replaces the configured database.
 
-Run ingestion while the API is stopped. Atomic file replacement protects the database on disk, but an already-running process may retain connections to the previous SQLite file. Container deployments should build and validate a new image, pass its health check, and then replace the old container.
+A failed import leaves the existing database untouched. Sentinel values (`"unavailable"` for DOIs and `"0"` for PubMed IDs) are stored as `NULL`.
+
+Run ingestion while the API is stopped. Although atomic replacement protects the database file, a running process can retain connections to the old SQLite database. For containers, build and validate a new image, pass its health check, then replace the old container.
+
+</details>
 
 <details>
 <summary><strong>API reference</strong></summary>
-
-## API reference
 
 Base URL: [https://retraction-api.onrender.com](https://retraction-api.onrender.com)
 
@@ -138,7 +175,7 @@ Base URL: [https://retraction-api.onrender.com](https://retraction-api.onrender.
 
 ### `GET /articles`
 
-Parameters: `skip` (0), `limit` (20, ≤100), `journal`, `publisher`, `retraction_nature`, `year`.
+Parameters: `skip` (default `0`), `limit` (default `20`, maximum `100`), `journal`, `publisher`, `retraction_nature`, and `year`.
 
 ```json
 {
@@ -158,47 +195,24 @@ Parameters: `skip` (0), `limit` (20, ≤100), `journal`, `publisher`, `retractio
 }
 ```
 
-### `GET /articles/{record_id}`
+### Other endpoints
 
-Full detail with authors, countries, reasons, subjects, DOIs, PubMed IDs, and more. Returns 404 if not found.
+| Endpoint | Description |
+|---|---|
+| `GET /articles/{record_id}` | Full article details; returns 404 if the record does not exist |
+| `GET /lookup/doi/{doi}` | Look up a record by retraction DOI |
+| `GET /lookup/pubmed/{pubmed_id}` | Look up a record by retraction PubMed ID |
+| `GET /search?q=...` | FTS5 search over titles, journals, and authors using prefix matching and AND logic |
+| `GET /stats/top-journals` | Top journals by retraction count |
+| `GET /stats/top-reasons` | Most frequently recorded retraction reasons |
+| `GET /stats/top-countries` | Countries associated with the most retractions |
 
-### `GET /lookup/doi/{doi}`
-
-Look up by retraction DOI. Same response as `/articles/{record_id}`.
-
-### `GET /lookup/pubmed/{pubmed_id}`
-
-Look up by retraction PubMed ID. Same response as `/articles/{record_id}`.
-
-### `GET /search`
-
-Parameters: `q` (required), `skip`, `limit`. Uses SQLite FTS5 with prefix matching and AND logic.
-
-### `GET /stats/top-journals`
-
-Top N journals by retraction count. Parameter: `limit` (10, ≤100).
-
-### `GET /stats/top-reasons`
-
-Top N retraction reasons. Parameter: `limit` (10, ≤100).
-
-### `GET /stats/top-countries`
-
-Top N countries by retraction count. Parameter: `limit` (10, ≤100).
+The statistics endpoints accept `limit`, defaulting to `10` and capped at `100`.
 
 </details>
 
-## Database model
-
-| Table | Description |
-|-------|-------------|
-| `retractions` | Main table, one row per retracted article (17 columns) |
-| `retraction_countries` | Many-to-many: countries associated with each retraction |
-| `retraction_reasons` | Many-to-many: reasons for each retraction |
-| `retraction_subjects` | Many-to-many: subject classifications |
-| `retractions_fts` | FTS5 virtual table for full-text search over title, journal, and authors_raw |
-
-## Project structure
+<details>
+<summary><strong>Project structure</strong></summary>
 
 ```text
 app/
@@ -213,15 +227,3 @@ tests/
 ```
 
 </details>
-
-## Testing
-
-```bash
-pytest tests/
-```
-
-## Linting
-
-```bash
-ruff check .
-```
