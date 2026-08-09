@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -9,20 +10,26 @@ from starlette.responses import JSONResponse
 from mcp_server.api_client import RetractionAPIClient
 from mcp_server.config import settings
 
-if settings.mcp_transport == "streamable-http" and not settings.allowed_hosts:
-    raise RuntimeError(
-        "RETRACTION_MCP_ALLOWED_HOSTS is required for Streamable HTTP transport"
-    )
+logger = logging.getLogger(__name__)
 
-transport_security = (
-    TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=settings.allowed_hosts,
-        allowed_origins=settings.allowed_origins,
+
+def _build_transport_security() -> TransportSecuritySettings | None:
+    if settings.mcp_transport != "streamable-http":
+        return None
+    if settings.allowed_hosts:
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=settings.allowed_hosts,
+            allowed_origins=settings.allowed_origins,
+        )
+    # Public read-only API: allow all hosts so hosted deployments work without
+    # extra config. Set RETRACTION_MCP_ALLOWED_HOSTS to lock this down.
+    logger.warning(
+        "RETRACTION_MCP_ALLOWED_HOSTS is not set; accepting any Host header. "
+        "Set it to your public hostname to enable DNS rebinding protection."
     )
-    if settings.allowed_hosts
-    else None
-)
+    return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
 
 mcp = FastMCP(
     "Retraction Watch API",
@@ -30,7 +37,7 @@ mcp = FastMCP(
     port=settings.server_port,
     stateless_http=True,
     json_response=True,
-    transport_security=transport_security,
+    transport_security=_build_transport_security(),
 )
 api_client = RetractionAPIClient(settings.base_url, settings.api_timeout)
 
@@ -41,7 +48,7 @@ StatsLimit = Annotated[int, Field(ge=1, le=100, description="Maximum statistics 
 
 @mcp.custom_route("/health", methods=["GET"])
 async def http_health_check(_request: Request) -> JSONResponse:
-    """Return process health for deployment platforms."""
+    """Health endpoint for hosted HTTP deployments (e.g. Render health checks)."""
     return JSONResponse({"status": "ok"})
 
 

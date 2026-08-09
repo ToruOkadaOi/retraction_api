@@ -83,18 +83,35 @@ python -m mcp_server
 
 Set `RETRACTION_API_URL` in `.env` to override.
 
-Local clients use `stdio` by default. To deploy a remote MCP server, build `Dockerfile.mcp` and configure Streamable HTTP:
+### Hosted MCP
+
+Also deployed over Streamable HTTP:
+
+- Endpoint: `https://retraction-watch-mcp.onrender.com/mcp`
+- Health: `https://retraction-watch-mcp.onrender.com/health`
+
+VS Code `.vscode/mcp.json`:
+
+```json
+{"servers": {"retraction-watch": {"type": "http", "url": "https://retraction-watch-mcp.onrender.com/mcp"}}}
+```
+
+OpenCode `opencode.json`:
+
+```json
+{"mcp": {"retraction-watch": {"type": "remote", "url": "https://retraction-watch-mcp.onrender.com/mcp"}}}
+```
+
+Claude Desktop: Settings > Connectors > add the endpoint URL.
+
+Notes: the MCP endpoint path is `/mcp`; `/health` is available for deployment health checks. To enable DNS rebinding protection, set `RETRACTION_MCP_ALLOWED_HOSTS` to the public hostname (e.g. `retraction-watch-mcp.onrender.com`). The free Render instance sleeps when idle, so the first connection can take ~30-60s.
+
+Local Docker run:
 
 ```bash
 docker build -f Dockerfile.mcp -t retraction-watch-mcp .
-docker run --rm -p 8001:8000 \
-  -e RETRACTION_API_URL=https://retraction-api.onrender.com \
-  -e RETRACTION_MCP_ALLOWED_HOSTS=localhost:8001 \
-  -e RETRACTION_MCP_ALLOWED_ORIGINS=http://localhost:8001 \
-  retraction-watch-mcp
+docker run --rm -p 8001:8000 -e RETRACTION_MCP_HOST=0.0.0.0 retraction-watch-mcp
 ```
-
-The MCP endpoint is `/mcp`; `/health` is available for deployment health checks. For a public hostname, replace the local allowlists with the exact external host and permitted browser origins. Non-browser MCP clients normally do not send an `Origin` header.
 
 ## Data ingestion
 
