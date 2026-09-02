@@ -90,3 +90,46 @@ class TestArticles:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
+
+    def test_filter_by_reason(self, client: TestClient):
+        resp = client.get("/articles?reason=fake")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+    def test_filter_by_country(self, client: TestClient):
+        resp = client.get("/articles?country=Canada")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 2
+
+    def test_filter_by_subject(self, client: TestClient):
+        resp = client.get("/articles?subject=medicine")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+    def test_filter_by_institution(self, client: TestClient):
+        resp = client.get("/articles?institution=University")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+    def test_filter_by_paywalled(self, client: TestClient):
+        resp = client.get("/articles?paywalled=No")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+    def test_filter_by_year_range(self, client: TestClient):
+        resp = client.get("/articles?from_year=2019&to_year=2020")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+

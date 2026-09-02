@@ -27,7 +27,7 @@ def anyio_backend():
 
 
 def _seed():
-    from app.models import Retraction, RetractionCountry, RetractionReason
+    from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
 
     session = TestingSessionLocal()
     r1 = Retraction(
@@ -38,10 +38,13 @@ def _seed():
         article_type="Research Article",
         retraction_nature="Retraction",
         retraction_date=date(2020, 6, 15),
+        original_paper_date=date(2018, 1, 1),
         retraction_doi="10.1000/test.doi",
+        original_paper_doi="10.1000/original.doi",
         retraction_pubmed_id=12345678,
+        original_paper_pubmed_id=87654321,
         paywalled="No",
-        notes="Test notes",
+        notes="Test notes investigation finding",
         institution="Test University",
         urls="https://example.com",
         authors_raw="John Doe;Jane Smith",
@@ -50,6 +53,7 @@ def _seed():
     session.add(RetractionCountry(record_id=1, country="USA"))
     session.add(RetractionCountry(record_id=1, country="UK"))
     session.add(RetractionReason(record_id=1, reason="Fake Data"))
+    session.add(RetractionSubject(record_id=1, subject="(MED) Medicine"))
 
     r2 = Retraction(
         record_id=2,
@@ -59,8 +63,11 @@ def _seed():
         article_type=None,
         retraction_nature="Expression of Concern",
         retraction_date=date(2021, 3, 10),
+        original_paper_date=date(2020, 3, 10),
         retraction_doi=None,
+        original_paper_doi=None,
         retraction_pubmed_id=None,
+        original_paper_pubmed_id=None,
         paywalled="Yes",
         notes=None,
         institution=None,
@@ -70,6 +77,7 @@ def _seed():
     session.add(r2)
     session.add(RetractionCountry(record_id=2, country="Canada"))
     session.add(RetractionReason(record_id=2, reason="Results Unreliable"))
+    session.add(RetractionSubject(record_id=2, subject="(ENV) Environment"))
 
     session.commit()
     session.close()

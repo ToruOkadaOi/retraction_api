@@ -8,6 +8,12 @@ def _split(raw: str | None) -> list[str]:
     return [part.strip() for part in raw.split(";") if part.strip()]
 
 
+def compute_latency_days(retraction_date, original_paper_date) -> int | None:
+    if retraction_date and original_paper_date:
+        return (retraction_date - original_paper_date).days
+    return None
+
+
 def build_article_detail(retraction: Retraction) -> ArticleDetail:
     return ArticleDetail(
         record_id=retraction.record_id,
@@ -30,4 +36,6 @@ def build_article_detail(retraction: Retraction) -> ArticleDetail:
         countries=[country.country for country in retraction.countries],
         reasons=[reason.reason for reason in retraction.reasons],
         subjects=[subject.subject for subject in retraction.subjects],
+        latency_days=compute_latency_days(retraction.retraction_date, retraction.original_paper_date),
     )
+

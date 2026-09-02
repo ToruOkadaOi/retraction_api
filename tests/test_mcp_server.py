@@ -37,7 +37,14 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
         "get_article",
         "lookup_article_by_doi",
         "lookup_article_by_pubmed",
+        "batch_check_citations",
         "search_articles",
+        "search_author_retractions",
+        "generate_integrity_dossier",
+        "analyze_retraction_timeline",
+        "detect_retraction_clusters",
+        "get_journal_profile",
+        "get_database_summary",
         "get_top_journals",
         "get_top_reasons",
         "get_top_countries",
@@ -53,7 +60,14 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
         ("get_article", {"record_id": 1}),
         ("lookup_article_by_doi", {"doi": "10.1000/test.doi"}),
         ("lookup_article_by_pubmed", {"pubmed_id": 12345678}),
+        ("batch_check_citations", {"dois": ["10.1000/test.doi"]}),
         ("search_articles", {"query": "test"}),
+        ("search_author_retractions", {"author_name": "Jane Smith"}),
+        ("generate_integrity_dossier", {"target_type": "author", "target_name": "Jane Smith"}),
+        ("analyze_retraction_timeline", {}),
+        ("detect_retraction_clusters", {"min_count": 5}),
+        ("get_journal_profile", {"journal": "Test Journal"}),
+        ("get_database_summary", {}),
         ("get_top_journals", {"limit": 10}),
         ("get_top_reasons", {"limit": 10}),
         ("get_top_countries", {"limit": 10}),
@@ -63,6 +77,31 @@ async def test_mcp_tools_call_the_api(mcp_session: ClientSession, tool_name, arg
     result = await mcp_session.call_tool(tool_name, arguments)
 
     assert result.isError is not True
+
+
+@pytest.mark.anyio
+async def test_mcp_resources(mcp_session: ClientSession):
+    resources = await mcp_session.list_resources()
+    resource_uris = {str(r.uri) for r in resources.resources}
+    assert "retraction://stats/summary" in resource_uris
+    assert "retraction://stats/top-reasons" in resource_uris
+
+    content = await mcp_session.read_resource("retraction://stats/summary")
+    assert len(content.contents) == 1
+    assert "total_retractions" in content.contents[0].text
+
+
+@pytest.mark.anyio
+async def test_mcp_prompts(mcp_session: ClientSession):
+    prompts = await mcp_session.list_prompts()
+    prompt_names = {p.name for p in prompts.prompts}
+    assert "screen_bibliography" in prompt_names
+    assert "author_integrity_audit" in prompt_names
+
+    prompt_res = await mcp_session.get_prompt("screen_bibliography", {"citations_text": "Sample text"})
+    assert len(prompt_res.messages) == 1
+    assert "Sample text" in prompt_res.messages[0].content.text
+
 
 
 @pytest.mark.anyio

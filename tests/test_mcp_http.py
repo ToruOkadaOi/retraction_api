@@ -61,8 +61,9 @@ def test_tools_list_over_http(http_client):
 
     assert resp.status_code == 200
     tools = resp.json()["result"]["tools"]
-    assert len(tools) == 9
+    assert len(tools) == 16
     assert "get_article" in {tool["name"] for tool in tools}
+    assert "batch_check_citations" in {tool["name"] for tool in tools}
 
 
 def test_port_env_override(monkeypatch):

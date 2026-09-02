@@ -68,3 +68,35 @@ class TestSearch:
             session.commit()
 
         assert client.get("/search?q=Updated").json()["total"] == 0
+
+    def test_search_author_endpoint(self, client: TestClient):
+        resp = client.get("/search/author?author=Jane")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["author"] == "Jane"
+        assert data["total_retractions"] == 1
+        assert len(data["articles"]) == 1
+        assert data["top_reasons"][0]["reason"] == "Fake Data"
+        assert data["top_journals"][0]["journal"] == "Test Journal"
+
+    def test_get_integrity_dossier_author(self, client: TestClient):
+        resp = client.get("/search/dossier?target_type=author&target_name=Jane%20Smith")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target_type"] == "author"
+        assert data["target_name"] == "Jane Smith"
+        assert data["total_retractions"] == 1
+        assert len(data["narrative_notes"]) == 1
+        assert "investigation finding" in data["narrative_notes"][0]
+
+    def test_get_integrity_dossier_institution(self, client: TestClient):
+        resp = client.get("/search/dossier?target_type=institution&target_name=University")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target_type"] == "institution"
+        assert data["total_retractions"] == 1
+
+    def test_get_integrity_dossier_not_found(self, client: TestClient):
+        resp = client.get("/search/dossier?target_type=author&target_name=NonexistentPerson")
+        assert resp.status_code == 404
+

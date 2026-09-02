@@ -57,10 +57,14 @@ https://retraction-watch-mcp.onrender.com/mcp
 
 ## What it does
 
-- List and filter articles by journal, publisher, retraction nature, and year
-- Look up a specific article by Retraction DOI or PubMed ID
-- Full-text search across titles, journals, and authors
-- Aggregate statistics for journals, retraction reasons, and countries
+- List and filter articles by journal, publisher, retraction nature, reason, country, subject, institution, paywalled status, and date range
+- Look up articles by DOI or PubMed ID (resolving **both** original publication identifiers and retraction notices)
+- Screen entire bibliographies or citation lists in batch in a single call
+- Full-text search across titles, journals, and authors with ranking
+- Generate research integrity dossiers for authors or institutions with narrative notes
+- Analyze retraction timelines and latency (time between publication and retraction)
+- Detect anomalous retraction clusters by journal and year (identifying potential paper mill spikes)
+- Access journal profiles and aggregate database metrics
 - Return paginated responses with configurable `skip` and `limit` parameters, capped at 100 records per page
 - Provide interactive OpenAPI documentation at `/docs`
 
@@ -69,14 +73,41 @@ https://retraction-watch-mcp.onrender.com/mcp
 | Tool | Result |
 |---|---|
 | `health_check` | API and database status |
-| `list_articles` | Filtered, paginated article summaries |
+| `list_articles` | Multi-facet filtered, paginated article summaries |
 | `get_article` | Full article details by record ID |
-| `lookup_article_by_doi` | Full article details by retraction DOI |
-| `lookup_article_by_pubmed` | Full article details by retraction PubMed ID |
-| `search_articles` | Ranked, paginated article summaries |
+| `lookup_article_by_doi` | Full article details by DOI (matches original paper DOI or retraction notice DOI) |
+| `lookup_article_by_pubmed` | Full article details by PubMed ID (matches original paper PMID or retraction PMID) |
+| `batch_check_citations` | Fast screening of multiple DOIs/PMIDs; returns retracted vs. clean citations |
+| `search_articles` | Ranked, paginated full-text search summaries |
+| `search_author_retractions` | Author-specific retraction records with top journals and reasons |
+| `generate_integrity_dossier` | Investigative dossier for author or institution with timeline and narrative notes |
+| `analyze_retraction_timeline` | Time-to-retraction delay analytics, averages, medians, and distribution brackets |
+| `detect_retraction_clusters` | Anomalous volume surges by journal and year (paper mill detection) |
+| `get_journal_profile` | Detailed journal track record, annual trend, top reasons, and latency |
+| `get_database_summary` | Global database summary metrics, nature breakdown, and paywalled ratio |
 | `get_top_journals` | Journals with the most retractions |
 | `get_top_reasons` | Most frequently recorded retraction reasons |
 | `get_top_countries` | Countries associated with the most retractions |
+
+## MCP resources
+
+| Resource URI | Description |
+|---|---|
+| `retraction://stats/summary` | Global database metrics and category breakdown |
+| `retraction://stats/top-reasons` | Top 25 most frequent retraction reasons |
+| `retraction://stats/top-journals` | Top 25 journals with the highest retraction counts |
+| `retraction://stats/top-countries` | Top 25 countries associated with retractions |
+| `retraction://stats/clusters` | Active journal-year retraction clusters |
+
+## MCP prompts
+
+| Prompt | Description |
+|---|---|
+| `screen_bibliography` | Parses citations/DOIs, calls `batch_check_citations`, and generates an audit report |
+| `author_integrity_audit` | Conducts a research integrity assessment on a named researcher |
+| `journal_reliability_audit`| Audits a journal's track record, latency, and volume anomalies |
+| `paper_mill_investigation` | Investigates high-volume clusters and coordinated paper-mill fraud |
+
 
 <details>
 <summary><strong>Getting started locally</strong></summary>
@@ -199,10 +230,17 @@ Parameters: `skip` (default `0`), `limit` (default `20`, maximum `100`), `journa
 
 | Endpoint | Description |
 |---|---|
-| `GET /articles/{record_id}` | Full article details; returns 404 if the record does not exist |
-| `GET /lookup/doi/{doi}` | Look up a record by retraction DOI |
-| `GET /lookup/pubmed/{pubmed_id}` | Look up a record by retraction PubMed ID |
+| `GET /articles/{record_id}` | Full article details (including latency); returns 404 if the record does not exist |
+| `GET /lookup/doi/{doi}` | Look up a record by original publication DOI or retraction notice DOI |
+| `GET /lookup/pubmed/{pubmed_id}` | Look up a record by original publication PubMed ID or retraction notice PubMed ID |
+| `POST /lookup/batch` | Screen a list of DOIs and PubMed IDs; returns matched retracted items and clean identifiers |
 | `GET /search?q=...` | FTS5 search over titles, journals, and authors using prefix matching and AND logic |
+| `GET /search/author?author=...` | Author retraction search with aggregated top reasons and journals |
+| `GET /search/dossier?target_type=...&target_name=...` | Investigative research integrity dossier with timeline and narrative notes |
+| `GET /stats/summary` | Global summary metrics (totals, unique journals/publishers, nature breakdown) |
+| `GET /stats/journal/{journal}` | Comprehensive journal profile (annual trend, top reasons, average latency) |
+| `GET /stats/latency` | Time-to-retraction delay analytics, averages, medians, and distribution brackets |
+| `GET /stats/clusters` | Statistical surge detector for journal-year clusters (paper mill anomaly detection) |
 | `GET /stats/top-journals` | Top journals by retraction count |
 | `GET /stats/top-reasons` | Most frequently recorded retraction reasons |
 | `GET /stats/top-countries` | Countries associated with the most retractions |

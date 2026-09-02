@@ -7,10 +7,17 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from app.schemas import (
     ArticleDetail,
     ArticleListItem,
+    AuthorRetractionSummary,
+    BatchLookupResponse,
     CountryStatistic,
+    DatabaseSummary,
+    IntegrityDossier,
+    JournalProfile,
     JournalStatistic,
     PaginatedResponse,
     ReasonStatistic,
+    RetractionClusterItem,
+    RetractionLatencyAnalysis,
 )
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
@@ -64,6 +71,35 @@ class RetractionAPIClient:
         except ValueError as exc:
             raise RetractionAPIError("Retraction Watch API returned invalid JSON") from exc
 
+    async def _post(self, path: str, json: Any) -> Any:
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                transport=self.transport,
+            ) as client:
+                response = await client.post(path, json=json)
+        except httpx.TimeoutException as exc:
+            raise RetractionAPIError(
+                f"Retraction Watch API timed out after {self.timeout:g} seconds"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise RetractionAPIError(
+                f"Could not connect to Retraction Watch API at {self.base_url}"
+            ) from exc
+
+        if response.status_code == 404:
+            raise RetractionAPINotFoundError("Resource not found")
+        if response.is_error:
+            raise RetractionAPIError(
+                f"Retraction Watch API returned HTTP {response.status_code}"
+            )
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise RetractionAPIError("Retraction Watch API returned invalid JSON") from exc
+
     @staticmethod
     def _model(model: type[ResponseModel], data: Any) -> ResponseModel:
         try:
@@ -95,12 +131,26 @@ class RetractionAPIClient:
         publisher: str | None = None,
         retraction_nature: str | None = None,
         year: int | None = None,
+        from_year: int | None = None,
+        to_year: int | None = None,
+        reason: str | None = None,
+        country: str | None = None,
+        subject: str | None = None,
+        institution: str | None = None,
+        paywalled: str | None = None,
     ) -> PaginatedResponse[ArticleListItem]:
         optional_params = {
             "journal": journal,
             "publisher": publisher,
             "retraction_nature": retraction_nature,
             "year": year,
+            "from_year": from_year,
+            "to_year": to_year,
+            "reason": reason,
+            "country": country,
+            "subject": subject,
+            "institution": institution,
+            "paywalled": paywalled,
         }
         params = {
             "skip": skip,
@@ -126,6 +176,17 @@ class RetractionAPIClient:
             await self._get(f"/lookup/pubmed/{pubmed_id}"),
         )
 
+    async def batch_lookup(
+        self,
+        dois: list[str] | None = None,
+        pubmed_ids: list[int] | None = None,
+    ) -> BatchLookupResponse:
+        data = await self._post(
+            "/lookup/batch",
+            json={"dois": dois or [], "pubmed_ids": pubmed_ids or []},
+        )
+        return self._model(BatchLookupResponse, data)
+
     async def search_articles(
         self,
         query: str,
@@ -141,6 +202,65 @@ class RetractionAPIClient:
             return PaginatedResponse[ArticleListItem].model_validate(data)
         except ValidationError as exc:
             raise RetractionAPIError("Retraction Watch API returned an invalid response") from exc
+
+    async def search_author(
+        self,
+        author: str,
+        *,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> AuthorRetractionSummary:
+        data = await self._get(
+            "/search/author",
+            params={"author": author, "skip": skip, "limit": limit},
+        )
+        return self._model(AuthorRetractionSummary, data)
+
+    async def generate_dossier(
+        self,
+        target_type: str,
+        target_name: str,
+    ) -> IntegrityDossier:
+        data = await self._get(
+            "/search/dossier",
+            params={"target_type": target_type, "target_name": target_name},
+        )
+        return self._model(IntegrityDossier, data)
+
+    async def analyze_retraction_latency(
+        self,
+        *,
+        journal: str | None = None,
+        subject: str | None = None,
+    ) -> RetractionLatencyAnalysis:
+        params = {}
+        if journal is not None:
+            params["journal"] = journal
+        if subject is not None:
+            params["subject"] = subject
+        data = await self._get("/stats/latency", params=params or None)
+        return self._model(RetractionLatencyAnalysis, data)
+
+    async def detect_retraction_clusters(
+        self,
+        *,
+        min_count: int = 10,
+        year: int | None = None,
+    ) -> list[RetractionClusterItem]:
+        params: dict[str, Any] = {"min_count": min_count}
+        if year is not None:
+            params["year"] = year
+        data = await self._get("/stats/clusters", params=params)
+        return self._models(RetractionClusterItem, data)
+
+    async def get_journal_profile(self, journal: str) -> JournalProfile:
+        encoded = quote(journal, safe="")
+        data = await self._get(f"/stats/journal/{encoded}")
+        return self._model(JournalProfile, data)
+
+    async def get_database_summary(self) -> DatabaseSummary:
+        data = await self._get("/stats/summary")
+        return self._model(DatabaseSummary, data)
 
     async def top_journals(self, limit: int = 10) -> list[JournalStatistic]:
         return self._models(
@@ -159,3 +279,4 @@ class RetractionAPIClient:
             CountryStatistic,
             await self._get("/stats/top-countries", params={"limit": limit}),
         )
+
