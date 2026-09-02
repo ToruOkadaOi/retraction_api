@@ -100,3 +100,33 @@ class TestSearch:
         resp = client.get("/search/dossier?target_type=author&target_name=NonexistentPerson")
         assert resp.status_code == 404
 
+    def test_search_investigation_notes(self, client: TestClient):
+        resp = client.get("/search/investigation?q=finding")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+        assert data["items"][0]["pubpeer_url"] == "https://pubpeer.com/publications/ABC12345"
+        assert "investigation finding" in data["items"][0]["notes_snippet"]
+
+    def test_search_taxonomy(self, client: TestClient):
+        resp = client.get("/search/taxonomy")
+        assert resp.status_code == 200
+        concepts = resp.json()
+        concept_names = {c["concept"] for c in concepts}
+        assert "image_manipulation" in concept_names
+        assert "data_fabrication" in concept_names
+        assert "fake_peer_review" in concept_names
+
+    def test_search_by_concept(self, client: TestClient):
+        resp = client.get("/search/concept/data_fabrication")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+    def test_search_by_unknown_concept(self, client: TestClient):
+        resp = client.get("/search/concept/alien_abduction")
+        assert resp.status_code == 404
+
+

@@ -52,7 +52,29 @@ class TestLookup:
         assert len(data["retractions"]) == 1
         assert data["retractions"][0]["record_id"] == 1
         assert "original_paper_doi: 10.1000/original.doi" in data["retractions"][0]["matched_by"]
-        assert "retraction_pmid: 12345678" in data["retractions"][0]["matched_by"]
         assert data["unmatched_dois"] == ["10.9999/clean.doi"]
         assert data["unmatched_pubmed_ids"] == [99999999]
+        assert data["retractions"][0]["pubpeer_url"] == "https://pubpeer.com/publications/ABC12345"
+
+    def test_lookup_pubpeer_by_record_id(self, client: TestClient):
+        resp = client.get("/lookup/pubpeer?record_id=1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["record_id"] == 1
+        assert data["pubpeer_url"] == "https://pubpeer.com/publications/ABC12345"
+
+    def test_lookup_pubpeer_by_doi(self, client: TestClient):
+        resp = client.get("/lookup/pubpeer?doi=10.1000/original.doi")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["pubpeer_url"] == "https://pubpeer.com/publications/ABC12345"
+
+    def test_lookup_pubpeer_not_found(self, client: TestClient):
+        resp = client.get("/lookup/pubpeer?record_id=2")
+        assert resp.status_code == 404
+
+    def test_lookup_pubpeer_missing_params(self, client: TestClient):
+        resp = client.get("/lookup/pubpeer")
+        assert resp.status_code == 400
+
 

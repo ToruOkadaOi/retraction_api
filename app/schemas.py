@@ -45,6 +45,7 @@ class ArticleDetail(ArticleBase):
     reasons: list[str] = Field(default_factory=list)
     subjects: list[str] = Field(default_factory=list)
     latency_days: int | None = None
+    pubpeer_url: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -77,12 +78,36 @@ class BatchRetractionItem(BaseModel):
     retraction_date: date | None = None
     original_paper_date: date | None = None
     latency_days: int | None = None
+    pubpeer_url: str | None = None
     original_paper_doi: str | None = None
     retraction_doi: str | None = None
     original_paper_pubmed_id: int | None = None
     retraction_pubmed_id: int | None = None
     matched_by: str
     reasons: list[str] = Field(default_factory=list)
+
+
+class PubPeerEvidence(BaseModel):
+    record_id: int
+    title: str
+    journal: str
+    doi: str | None = None
+    pubpeer_url: str
+    notes: str | None = None
+
+
+class TaxonomyConcept(BaseModel):
+    concept: str
+    description: str
+    tags: list[str]
+
+
+class InvestigationSearchItem(ArticleListItem):
+    notes_snippet: str | None = None
+    pubpeer_url: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+    institution: str | None = None
+
 
 
 class BatchLookupResponse(BaseModel):

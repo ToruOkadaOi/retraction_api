@@ -39,6 +39,10 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
         "lookup_article_by_pubmed",
         "batch_check_citations",
         "search_articles",
+        "search_investigation_notes",
+        "get_pubpeer_evidence",
+        "get_misconduct_taxonomy",
+        "search_by_misconduct_concept",
         "search_author_retractions",
         "generate_integrity_dossier",
         "analyze_retraction_timeline",
@@ -62,6 +66,10 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
         ("lookup_article_by_pubmed", {"pubmed_id": 12345678}),
         ("batch_check_citations", {"dois": ["10.1000/test.doi"]}),
         ("search_articles", {"query": "test"}),
+        ("search_investigation_notes", {"query": "test"}),
+        ("get_pubpeer_evidence", {"record_id": 1}),
+        ("get_misconduct_taxonomy", {}),
+        ("search_by_misconduct_concept", {"concept": "image_manipulation"}),
         ("search_author_retractions", {"author_name": "Jane Smith"}),
         ("generate_integrity_dossier", {"target_type": "author", "target_name": "Jane Smith"}),
         ("analyze_retraction_timeline", {}),
@@ -85,6 +93,7 @@ async def test_mcp_resources(mcp_session: ClientSession):
     resource_uris = {str(r.uri) for r in resources.resources}
     assert "retraction://stats/summary" in resource_uris
     assert "retraction://stats/top-reasons" in resource_uris
+    assert "retraction://taxonomy" in resource_uris
 
     content = await mcp_session.read_resource("retraction://stats/summary")
     assert len(content.contents) == 1
@@ -97,10 +106,12 @@ async def test_mcp_prompts(mcp_session: ClientSession):
     prompt_names = {p.name for p in prompts.prompts}
     assert "screen_bibliography" in prompt_names
     assert "author_integrity_audit" in prompt_names
+    assert "investigate_scientific_misconduct" in prompt_names
 
     prompt_res = await mcp_session.get_prompt("screen_bibliography", {"citations_text": "Sample text"})
     assert len(prompt_res.messages) == 1
     assert "Sample text" in prompt_res.messages[0].content.text
+
 
 
 

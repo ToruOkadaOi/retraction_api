@@ -147,6 +147,46 @@ def api_response(request: httpx.Request) -> httpx.Response:
                 "top_countries": [{"country": "USA", "count": 1}],
             },
         )
+    if path == "/search/investigation":
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        **ARTICLE_SUMMARY,
+                        "notes_snippet": "investigation finding",
+                        "pubpeer_url": "https://pubpeer.com/publications/ABC12345",
+                        "reasons": ["Fake Data"],
+                        "institution": "Test University",
+                    }
+                ],
+                "total": 1,
+                "skip": 0,
+                "limit": 20,
+            },
+        )
+    if path == "/lookup/pubpeer":
+        return httpx.Response(
+            200,
+            json={
+                "record_id": 1,
+                "title": "Test Article",
+                "journal": "Test Journal",
+                "doi": "10.1000/test.doi",
+                "pubpeer_url": "https://pubpeer.com/publications/ABC12345",
+                "notes": "notes finding",
+            },
+        )
+    if path == "/search/taxonomy":
+        return httpx.Response(
+            200,
+            json=[{"concept": "image_manipulation", "description": "images", "tags": ["Fake Images"]}],
+        )
+    if path.startswith("/search/concept/"):
+        return httpx.Response(
+            200,
+            json={"items": [ARTICLE_SUMMARY], "total": 1, "skip": 0, "limit": 20},
+        )
     if path.startswith(("/articles/", "/lookup/doi/", "/lookup/pubmed/")):
         return httpx.Response(200, json=ARTICLE_DETAIL)
     if path == "/stats/top-journals":
@@ -181,6 +221,10 @@ async def test_api_client_supports_all_read_endpoints(mcp_api_client):
     assert len(await mcp_api_client.detect_retraction_clusters()) == 1
     assert (await mcp_api_client.get_journal_profile("Test Journal")).total_retractions == 1
     assert (await mcp_api_client.get_database_summary()).total_retractions == 1
+    assert (await mcp_api_client.search_investigation("finding")).total == 1
+    assert (await mcp_api_client.get_pubpeer_evidence(record_id=1)).pubpeer_url == "https://pubpeer.com/publications/ABC12345"
+    assert (await mcp_api_client.get_misconduct_taxonomy())[0].concept == "image_manipulation"
+    assert (await mcp_api_client.search_by_concept("image_manipulation")).total == 1
     assert (await mcp_api_client.top_journals())[0].journal == "Test Journal"
     assert (await mcp_api_client.top_reasons())[0].reason == "Fake Data"
     assert (await mcp_api_client.top_countries())[0].country == "USA"

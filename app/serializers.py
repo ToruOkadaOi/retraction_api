@@ -1,5 +1,6 @@
 from app.models import Retraction
 from app.schemas import ArticleDetail
+from app.taxonomy import extract_pubpeer_url
 
 
 def _split(raw: str | None) -> list[str]:
@@ -37,5 +38,6 @@ def build_article_detail(retraction: Retraction) -> ArticleDetail:
         reasons=[reason.reason for reason in retraction.reasons],
         subjects=[subject.subject for subject in retraction.subjects],
         latency_days=compute_latency_days(retraction.retraction_date, retraction.original_paper_date),
+        pubpeer_url=extract_pubpeer_url(retraction.notes),
     )
 

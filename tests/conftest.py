@@ -44,7 +44,7 @@ def _seed():
         retraction_pubmed_id=12345678,
         original_paper_pubmed_id=87654321,
         paywalled="No",
-        notes="Test notes investigation finding",
+        notes="Test notes investigation finding see https://pubpeer.com/publications/ABC12345",
         institution="Test University",
         urls="https://example.com",
         authors_raw="John Doe;Jane Smith",
@@ -53,6 +53,7 @@ def _seed():
     session.add(RetractionCountry(record_id=1, country="USA"))
     session.add(RetractionCountry(record_id=1, country="UK"))
     session.add(RetractionReason(record_id=1, reason="Fake Data"))
+    session.add(RetractionReason(record_id=1, reason="Falsification/Fabrication of Data"))
     session.add(RetractionSubject(record_id=1, subject="(MED) Medicine"))
 
     r2 = Retraction(

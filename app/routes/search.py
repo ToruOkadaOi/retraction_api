@@ -5,14 +5,21 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.models import Retraction
+from app.models import Retraction, RetractionReason
 from app.schemas import (
     ArticleListItem,
     AuthorRetractionSummary,
     IntegrityDossier,
+    InvestigationSearchItem,
     JournalStatistic,
     PaginatedResponse,
     ReasonStatistic,
+    TaxonomyConcept,
+)
+from app.taxonomy import (
+    extract_pubpeer_url,
+    get_taxonomy_concepts,
+    map_concept_to_tags,
 )
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -220,4 +227,123 @@ def get_integrity_dossier(
         narrative_notes=narrative_notes,
         articles=articles,
     )
+
+
+@router.get("/investigation")
+def search_investigation_notes(
+    q: str = Query(..., min_length=1),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> PaginatedResponse[InvestigationSearchItem]:
+    query = _fts_query(q)
+    if not query:
+        return PaginatedResponse(items=[], total=0, skip=skip, limit=limit)
+
+    total = db.execute(
+        text("SELECT COUNT(*) FROM retractions_fts WHERE retractions_fts MATCH :q"),
+        {"q": query},
+    ).scalar()
+
+    rows = db.execute(
+        text(
+            "SELECT rowid FROM retractions_fts "
+            "WHERE retractions_fts MATCH :q "
+            "ORDER BY rank LIMIT :limit OFFSET :skip"
+        ),
+        {"q": query, "limit": limit, "skip": skip},
+    ).all()
+
+    record_ids = [r[0] for r in rows]
+    if not record_ids:
+        return PaginatedResponse(items=[], total=total or 0, skip=skip, limit=limit)
+
+    records = (
+        db.query(Retraction)
+        .filter(Retraction.record_id.in_(record_ids))
+        .all()
+    )
+    records_by_id = {r.record_id: r for r in records}
+
+    items = []
+    for rid in record_ids:
+        if rid in records_by_id:
+            r = records_by_id[rid]
+            notes_str = r.notes.strip() if r.notes else None
+            snippet = notes_str[:300] + ("..." if notes_str and len(notes_str) > 300 else "") if notes_str else None
+            items.append(
+                InvestigationSearchItem(
+                    record_id=r.record_id,
+                    title=r.title,
+                    journal=r.journal,
+                    retraction_nature=r.retraction_nature,
+                    retraction_date=r.retraction_date,
+                    publisher=r.publisher,
+                    notes_snippet=snippet,
+                    pubpeer_url=extract_pubpeer_url(r.notes),
+                    reasons=[reason.reason for reason in r.reasons],
+                    institution=r.institution,
+                )
+            )
+
+    return PaginatedResponse(
+        items=items,
+        total=total or 0,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.get("/taxonomy")
+def get_taxonomy() -> list[TaxonomyConcept]:
+    return [TaxonomyConcept(**item) for item in get_taxonomy_concepts()]
+
+
+@router.get("/concept/{concept}")
+def search_by_concept(
+    concept: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> PaginatedResponse[ArticleListItem]:
+    tags = map_concept_to_tags(concept)
+    if not tags:
+        available = ", ".join(item["concept"] for item in get_taxonomy_concepts())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown concept '{concept}'. Available concepts: {available}",
+        )
+
+    tag_filters = [
+        Retraction.reasons.any(func.lower(RetractionReason.reason).contains(t.lower()))
+        for t in tags
+    ]
+    filter_expr = tag_filters[0]
+    for expr in tag_filters[1:]:
+        filter_expr = filter_expr | expr
+
+    total = db.query(func.count(Retraction.record_id)).filter(filter_expr).scalar() or 0
+    records = (
+        db.query(Retraction)
+        .filter(filter_expr)
+        .order_by(Retraction.retraction_date.desc().nullslast())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    items = [
+        ArticleListItem(
+            record_id=r.record_id,
+            title=r.title,
+            journal=r.journal,
+            retraction_nature=r.retraction_nature,
+            retraction_date=r.retraction_date,
+            publisher=r.publisher,
+        )
+        for r in records
+    ]
+
+    return PaginatedResponse(items=items, total=total, skip=skip, limit=limit)
+
 

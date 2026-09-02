@@ -25,6 +25,7 @@ def list_articles(
     subject: str | None = Query(None),
     institution: str | None = Query(None),
     paywalled: str | None = Query(None),
+    has_pubpeer: bool | None = Query(None, description="Filter for articles with/without PubPeer discussion threads"),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ArticleListItem]:
     filters = []
@@ -62,6 +63,12 @@ def list_articles(
         filters.append(func.lower(Retraction.institution).contains(institution.strip().lower()))
     if paywalled:
         filters.append(func.lower(Retraction.paywalled) == paywalled.strip().lower())
+    if has_pubpeer is True:
+        filters.append(func.lower(Retraction.notes).contains("pubpeer.com"))
+    elif has_pubpeer is False:
+        filters.append(
+            (Retraction.notes.is_(None)) | (~func.lower(Retraction.notes).contains("pubpeer.com"))
+        )
 
     total = (
         db.query(func.count(Retraction.record_id))

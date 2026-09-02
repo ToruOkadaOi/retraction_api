@@ -57,10 +57,12 @@ https://retraction-watch-mcp.onrender.com/mcp
 
 ## What it does
 
-- List and filter articles by journal, publisher, retraction nature, reason, country, subject, institution, paywalled status, and date range
+- List and filter articles by journal, publisher, retraction nature, reason, country, subject, institution, paywalled status, PubPeer presence, and date range
 - Look up articles by DOI or PubMed ID (resolving **both** original publication identifiers and retraction notices)
 - Screen entire bibliographies or citation lists in batch in a single call
-- Full-text search across titles, journals, and authors with ranking
+- Full-text search across titles, journals, authors, narrative notes, and institutions
+- Surface community whistleblower reports and post-publication peer review threads from **PubPeer** (over 9,300 linked articles)
+- Search standardized scientific misconduct concepts (image manipulation, fake peer review, paper mills, data fabrication)
 - Generate research integrity dossiers for authors or institutions with narrative notes
 - Analyze retraction timelines and latency (time between publication and retraction)
 - Detect anomalous retraction clusters by journal and year (identifying potential paper mill spikes)
@@ -73,12 +75,16 @@ https://retraction-watch-mcp.onrender.com/mcp
 | Tool | Result |
 |---|---|
 | `health_check` | API and database status |
-| `list_articles` | Multi-facet filtered, paginated article summaries |
-| `get_article` | Full article details by record ID |
+| `list_articles` | Multi-facet filtered, paginated article summaries (including `has_pubpeer` filter) |
+| `get_article` | Full article details by record ID (including latency and `pubpeer_url`) |
 | `lookup_article_by_doi` | Full article details by DOI (matches original paper DOI or retraction notice DOI) |
 | `lookup_article_by_pubmed` | Full article details by PubMed ID (matches original paper PMID or retraction PMID) |
 | `batch_check_citations` | Fast screening of multiple DOIs/PMIDs; returns retracted vs. clean citations |
 | `search_articles` | Ranked, paginated full-text search summaries |
+| `search_investigation_notes` | Search full investigation narratives, institutional committee findings, and whistleblower accounts |
+| `get_pubpeer_evidence` | Retrieve PubPeer post-publication review link and community discussion context |
+| `get_misconduct_taxonomy` | Standardized misconduct taxonomy (image manipulation, fake peer review, paper mill, etc.) |
+| `search_by_misconduct_concept` | Search articles mapped to a standardized scientific misconduct concept |
 | `search_author_retractions` | Author-specific retraction records with top journals and reasons |
 | `generate_integrity_dossier` | Investigative dossier for author or institution with timeline and narrative notes |
 | `analyze_retraction_timeline` | Time-to-retraction delay analytics, averages, medians, and distribution brackets |
@@ -98,6 +104,7 @@ https://retraction-watch-mcp.onrender.com/mcp
 | `retraction://stats/top-journals` | Top 25 journals with the highest retraction counts |
 | `retraction://stats/top-countries` | Top 25 countries associated with retractions |
 | `retraction://stats/clusters` | Active journal-year retraction clusters |
+| `retraction://taxonomy` | Controlled scientific misconduct taxonomy and reason mappings |
 
 ## MCP prompts
 
@@ -107,6 +114,8 @@ https://retraction-watch-mcp.onrender.com/mcp
 | `author_integrity_audit` | Conducts a research integrity assessment on a named researcher |
 | `journal_reliability_audit`| Audits a journal's track record, latency, and volume anomalies |
 | `paper_mill_investigation` | Investigates high-volume clusters and coordinated paper-mill fraud |
+| `investigate_scientific_misconduct` | Conducts a deep forensic investigation using misconduct taxonomy, narrative notes, and PubPeer links |
+
 
 
 <details>
@@ -234,7 +243,11 @@ Parameters: `skip` (default `0`), `limit` (default `20`, maximum `100`), `journa
 | `GET /lookup/doi/{doi}` | Look up a record by original publication DOI or retraction notice DOI |
 | `GET /lookup/pubmed/{pubmed_id}` | Look up a record by original publication PubMed ID or retraction notice PubMed ID |
 | `POST /lookup/batch` | Screen a list of DOIs and PubMed IDs; returns matched retracted items and clean identifiers |
-| `GET /search?q=...` | FTS5 search over titles, journals, and authors using prefix matching and AND logic |
+| `GET /lookup/pubpeer` | Retrieve PubPeer whistleblower thread URL and community discussion context |
+| `GET /search?q=...` | FTS5 search over titles, journals, authors, notes, and institutions |
+| `GET /search/investigation?q=...` | Narrative FTS5 search returning institutional findings, committee notes, and PubPeer links |
+| `GET /search/taxonomy` | Retrieve the standardized scientific misconduct taxonomy and concept mappings |
+| `GET /search/concept/{concept}` | Search articles mapped to a standardized misconduct concept (e.g. `image_manipulation`) |
 | `GET /search/author?author=...` | Author retraction search with aggregated top reasons and journals |
 | `GET /search/dossier?target_type=...&target_name=...` | Investigative research integrity dossier with timeline and narrative notes |
 | `GET /stats/summary` | Global summary metrics (totals, unique journals/publishers, nature breakdown) |

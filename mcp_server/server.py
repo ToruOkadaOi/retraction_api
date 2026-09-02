@@ -80,6 +80,7 @@ async def list_articles(
     subject: Annotated[str | None, Field(description="Filter by subject discipline")] = None,
     institution: Annotated[str | None, Field(description="Filter by author institution")] = None,
     paywalled: Annotated[str | None, Field(description="'Yes', 'No', or 'Unknown'")] = None,
+    has_pubpeer: Annotated[bool | None, Field(description="Filter for articles with (or without) PubPeer discussion threads")] = None,
 ) -> dict[str, Any]:
     """List article summaries with rich multi-facet filters and pagination."""
     result = await api_client.list_articles(
@@ -96,6 +97,7 @@ async def list_articles(
         subject=subject,
         institution=institution,
         paywalled=paywalled,
+        has_pubpeer=has_pubpeer,
     )
     return _dump(result)
 
@@ -149,6 +151,42 @@ async def search_articles(
             limit=limit,
         )
     )
+
+
+@mcp.tool()
+async def search_investigation_notes(
+    query: Annotated[str, Field(min_length=1, description="Keywords to search in notes, institutional findings, reasons, and title")],
+    skip: Skip = 0,
+    limit: PageLimit = 20,
+) -> dict[str, Any]:
+    """Search full investigation narratives, institutional findings, committee notes, and whistleblower accounts."""
+    return _dump(await api_client.search_investigation(query, skip=skip, limit=limit))
+
+
+@mcp.tool()
+async def get_pubpeer_evidence(
+    record_id: Annotated[int | None, Field(description="Retraction Watch record ID")] = None,
+    doi: Annotated[str | None, Field(description="Article DOI")] = None,
+) -> dict[str, Any]:
+    """Retrieve the PubPeer whistleblower and post-publication peer review discussion link for a retracted article."""
+    return _dump(await api_client.get_pubpeer_evidence(record_id=record_id, doi=doi))
+
+
+@mcp.tool()
+async def get_misconduct_taxonomy() -> list[dict[str, Any]]:
+    """Retrieve the standardized scientific misconduct taxonomy mapping concepts (image manipulation, fake peer review, paper mill, etc.) to database reason tags."""
+    return _dump(await api_client.get_misconduct_taxonomy())
+
+
+@mcp.tool()
+async def search_by_misconduct_concept(
+    concept: Annotated[str, Field(description="Concept: image_manipulation, fake_peer_review, paper_mill, data_fabrication, plagiarism, author_dispute, ethics_and_consent, honest_error")],
+    skip: Skip = 0,
+    limit: PageLimit = 20,
+) -> dict[str, Any]:
+    """Search articles mapped to a standardized scientific misconduct concept."""
+    return _dump(await api_client.search_by_concept(concept, skip=skip, limit=limit))
+
 
 
 @mcp.tool()
@@ -260,9 +298,35 @@ async def resource_retraction_clusters() -> str:
     return json.dumps(_dump(data), indent=2)
 
 
+@mcp.resource("retraction://taxonomy")
+async def resource_taxonomy() -> str:
+    """Controlled scientific misconduct taxonomy and reason mappings."""
+    data = await api_client.get_misconduct_taxonomy()
+    return json.dumps(_dump(data), indent=2)
+
+
 # ---------------------------------------------------------------------------
 # FastMCP Prompts: Guided workflows for AI agents
 # ---------------------------------------------------------------------------
+
+
+@mcp.prompt()
+def investigate_scientific_misconduct(topic_or_allegation: str) -> str:
+    """Investigate a scientific misconduct allegation or topic using taxonomy, narrative notes, and PubPeer links."""
+    return (
+        f"You are an expert scientific integrity investigator auditing allegations of academic misconduct: \"{topic_or_allegation}\".\n\n"
+        "Instructions:\n"
+        "1. First call `get_misconduct_taxonomy` to identify relevant database reason tags and concept names.\n"
+        "2. Search relevant articles using `search_by_misconduct_concept` or `search_investigation_notes`.\n"
+        "3. If specific papers or DOIs emerge, check for community whistleblower reports with `get_pubpeer_evidence`.\n"
+        "4. If specific authors or institutions are named, generate an investigative profile with `generate_integrity_dossier`.\n"
+        "5. Synthesize a comprehensive investigative briefing:\n"
+        "   - Summary of the misconduct pattern (e.g. image manipulation, paper mill, fake reviewers).\n"
+        "   - Key institutions and researchers involved.\n"
+        "   - Formal actions taken (university inquiry conclusions, journal retraction notices).\n"
+        "   - Links to community evidence and PubPeer threads where available."
+    )
+
 
 
 @mcp.prompt()

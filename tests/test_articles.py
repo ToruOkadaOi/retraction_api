@@ -35,7 +35,9 @@ class TestArticles:
         assert data["record_id"] == 1
         assert data["publisher"] == "Test Publisher"
         assert data["countries"] == ["USA", "UK"]
-        assert data["reasons"] == ["Fake Data"]
+        assert "Fake Data" in data["reasons"]
+        assert "Falsification/Fabrication of Data" in data["reasons"]
+        assert data["pubpeer_url"] == "https://pubpeer.com/publications/ABC12345"
         assert data["authors"] == ["John Doe", "Jane Smith"]
         assert data["urls"] == ["https://example.com"]
 
@@ -132,4 +134,18 @@ class TestArticles:
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["record_id"] == 1
+
+    def test_filter_by_has_pubpeer(self, client: TestClient):
+        resp = client.get("/articles?has_pubpeer=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["record_id"] == 1
+
+        resp_false = client.get("/articles?has_pubpeer=false")
+        assert resp_false.status_code == 200
+        data_false = resp_false.json()
+        assert data_false["total"] == 1
+        assert data_false["items"][0]["record_id"] == 2
+
 

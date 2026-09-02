@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -9,8 +9,10 @@ from app.schemas import (
     BatchLookupRequest,
     BatchLookupResponse,
     BatchRetractionItem,
+    PubPeerEvidence,
 )
 from app.serializers import build_article_detail, compute_latency_days
+from app.taxonomy import extract_pubpeer_url
 
 router = APIRouter(prefix="/lookup", tags=["lookup"])
 
@@ -119,6 +121,7 @@ def batch_lookup(
             retraction_date=r.retraction_date,
             original_paper_date=r.original_paper_date,
             latency_days=compute_latency_days(r.retraction_date, r.original_paper_date),
+            pubpeer_url=extract_pubpeer_url(r.notes),
             original_paper_doi=r.original_paper_doi,
             retraction_doi=r.retraction_doi,
             original_paper_pubmed_id=r.original_paper_pubmed_id,
@@ -144,4 +147,47 @@ def batch_lookup(
         unmatched_dois=unmatched_dois,
         unmatched_pubmed_ids=unmatched_pmids,
     )
+
+
+@router.get("/pubpeer")
+def get_pubpeer_evidence(
+    record_id: int | None = Query(None),
+    doi: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> PubPeerEvidence:
+    if not record_id and not doi:
+        raise HTTPException(
+            status_code=400,
+            detail="Must provide either record_id or doi",
+        )
+
+    query = db.query(Retraction)
+    if record_id:
+        article = query.filter(Retraction.record_id == record_id).first()
+    else:
+        clean_doi = doi.strip().lower()
+        article = query.filter(
+            (func.lower(Retraction.retraction_doi) == clean_doi)
+            | (func.lower(Retraction.original_paper_doi) == clean_doi)
+        ).first()
+
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    pubpeer_url = extract_pubpeer_url(article.notes)
+    if not pubpeer_url:
+        raise HTTPException(
+            status_code=404,
+            detail="No PubPeer discussion thread found for this article",
+        )
+
+    return PubPeerEvidence(
+        record_id=article.record_id,
+        title=article.title,
+        journal=article.journal,
+        doi=article.original_paper_doi or article.retraction_doi,
+        pubpeer_url=pubpeer_url,
+        notes=article.notes,
+    )
+
 

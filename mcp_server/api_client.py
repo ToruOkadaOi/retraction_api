@@ -12,12 +12,15 @@ from app.schemas import (
     CountryStatistic,
     DatabaseSummary,
     IntegrityDossier,
+    InvestigationSearchItem,
     JournalProfile,
     JournalStatistic,
     PaginatedResponse,
+    PubPeerEvidence,
     ReasonStatistic,
     RetractionClusterItem,
     RetractionLatencyAnalysis,
+    TaxonomyConcept,
 )
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
@@ -138,6 +141,7 @@ class RetractionAPIClient:
         subject: str | None = None,
         institution: str | None = None,
         paywalled: str | None = None,
+        has_pubpeer: bool | None = None,
     ) -> PaginatedResponse[ArticleListItem]:
         optional_params = {
             "journal": journal,
@@ -151,6 +155,7 @@ class RetractionAPIClient:
             "subject": subject,
             "institution": institution,
             "paywalled": paywalled,
+            "has_pubpeer": has_pubpeer,
         }
         params = {
             "skip": skip,
@@ -279,4 +284,55 @@ class RetractionAPIClient:
             CountryStatistic,
             await self._get("/stats/top-countries", params={"limit": limit}),
         )
+
+    async def search_investigation(
+        self,
+        query: str,
+        *,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> PaginatedResponse[InvestigationSearchItem]:
+        data = await self._get(
+            "/search/investigation",
+            params={"q": query, "skip": skip, "limit": limit},
+        )
+        try:
+            return PaginatedResponse[InvestigationSearchItem].model_validate(data)
+        except ValidationError as exc:
+            raise RetractionAPIError("Retraction Watch API returned an invalid response") from exc
+
+    async def get_pubpeer_evidence(
+        self,
+        *,
+        record_id: int | None = None,
+        doi: str | None = None,
+    ) -> PubPeerEvidence:
+        params: dict[str, Any] = {}
+        if record_id is not None:
+            params["record_id"] = record_id
+        if doi:
+            params["doi"] = doi
+        data = await self._get("/lookup/pubpeer", params=params)
+        return self._model(PubPeerEvidence, data)
+
+    async def get_misconduct_taxonomy(self) -> list[TaxonomyConcept]:
+        data = await self._get("/search/taxonomy")
+        return self._models(TaxonomyConcept, data)
+
+    async def search_by_concept(
+        self,
+        concept: str,
+        *,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> PaginatedResponse[ArticleListItem]:
+        data = await self._get(
+            f"/search/concept/{concept}",
+            params={"skip": skip, "limit": limit},
+        )
+        try:
+            return PaginatedResponse[ArticleListItem].model_validate(data)
+        except ValidationError as exc:
+            raise RetractionAPIError("Retraction Watch API returned an invalid response") from exc
+
 
