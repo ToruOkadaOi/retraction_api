@@ -2,9 +2,10 @@
 
 import re
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 PUBPEER_REGEX = re.compile(
-    r"https?://(?:www\.)?pubpeer\.com/(?:publications/|search\?q=)?([A-Za-z0-9]+)",
+    r"https?://(?:www\.)?pubpeer\.com/[^\s<>\"']+",
     re.IGNORECASE,
 )
 
@@ -12,11 +13,21 @@ PUBPEER_REGEX = re.compile(
 def extract_pubpeer_url(notes: str | None) -> str | None:
     if not notes:
         return None
-    match = PUBPEER_REGEX.search(notes)
-    if match:
-        identifier = match.group(1)
-        return f"https://pubpeer.com/publications/{identifier}"
-    return None
+    search_url = None
+    for match in PUBPEER_REGEX.finditer(notes):
+        url = match.group().rstrip(".,;:")
+        for opening, closing in (("(", ")"), ("[", "]"), ("{", "}")):
+            while url.endswith(closing) and url.count(closing) > url.count(opening):
+                url = url[:-1]
+        parts = urlsplit(url)
+        publication = re.fullmatch(r"/publications/([A-Za-z0-9]+)/?", parts.path, re.IGNORECASE)
+        if publication:
+            return f"https://pubpeer.com/publications/{publication.group(1)}"
+        if parts.path.rstrip("/").lower() == "/search" and any(
+            value.strip() for value in parse_qs(parts.query).get("q", [])
+        ):
+            search_url = search_url or url
+    return search_url
 
 
 MISCONDUCT_TAXONOMY: dict[str, dict[str, Any]] = {

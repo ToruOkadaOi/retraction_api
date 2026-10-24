@@ -111,10 +111,13 @@ class InvestigationSearchItem(ArticleListItem):
 
 
 class BatchLookupResponse(BaseModel):
-    screened_count: int
-    retracted_count: int
-    clean_count: int
-    retractions: list[BatchRetractionItem]
+    screened_count: int = Field(description="Unique nonempty DOIs plus unique positive PubMed IDs screened")
+    matched_identifier_count: int
+    not_found_count: int = Field(description="Screened identifiers with no matching database record; not a safety assessment")
+    matched_record_count: int
+    retracted_count: int = Field(description="Matched records whose notice type is Retraction; not a current-status determination")
+    counts_by_nature: dict[str, int]
+    records: list[BatchRetractionItem]
     unmatched_dois: list[str]
     unmatched_pubmed_ids: list[int]
 
@@ -144,7 +147,9 @@ class RetractionClusterItem(BaseModel):
 
 class AuthorRetractionSummary(BaseModel):
     author: str
+    total_records: int
     total_retractions: int
+    counts_by_nature: dict[str, int]
     top_reasons: list[ReasonStatistic]
     top_journals: list[JournalStatistic]
     articles: list[ArticleListItem]
@@ -153,7 +158,9 @@ class AuthorRetractionSummary(BaseModel):
 class IntegrityDossier(BaseModel):
     target_type: str
     target_name: str
+    total_records: int
     total_retractions: int
+    counts_by_nature: dict[str, int]
     first_retraction_date: date | None = None
     latest_retraction_date: date | None = None
     top_reasons: list[ReasonStatistic]
@@ -164,13 +171,16 @@ class IntegrityDossier(BaseModel):
 
 class JournalProfile(BaseModel):
     journal: str
+    total_records: int
     total_retractions: int
+    counts_by_nature: dict[str, int]
     average_latency_days: float | None = None
     top_reasons: list[ReasonStatistic]
     yearly_counts: dict[str, int]
 
 
 class DatabaseSummary(BaseModel):
+    total_records: int
     total_retractions: int
     unique_journals: int
     unique_publishers: int

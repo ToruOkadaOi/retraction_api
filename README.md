@@ -79,10 +79,10 @@ https://retraction-watch-mcp.onrender.com/mcp
 | `get_article` | Full article details by record ID (including latency and `pubpeer_url`) |
 | `lookup_article_by_doi` | Full article details by DOI (matches original paper DOI or retraction notice DOI) |
 | `lookup_article_by_pubmed` | Full article details by PubMed ID (matches original paper PMID or retraction PMID) |
-| `batch_check_citations` | Fast screening of multiple DOIs/PMIDs; returns retracted vs. clean citations |
+| `batch_check_citations` | Screen unique DOIs/PMIDs; return matching notice records, counts by notice type, and identifiers not found |
 | `search_articles` | Ranked, paginated full-text search summaries |
 | `search_investigation_notes` | Search full investigation narratives, institutional committee findings, and whistleblower accounts |
-| `get_pubpeer_evidence` | Retrieve PubPeer post-publication review link and community discussion context |
+| `get_pubpeer_evidence` | Retrieve a PubPeer publication or search link from the record's notes |
 | `get_misconduct_taxonomy` | Standardized misconduct taxonomy (image manipulation, fake peer review, paper mill, etc.) |
 | `search_by_misconduct_concept` | Search articles mapped to a standardized scientific misconduct concept |
 | `search_author_retractions` | Author-specific retraction records with top journals and reasons |
@@ -173,7 +173,7 @@ Environment variables are loaded from `.env`:
 | `CSV_PATH` | `data/retraction_watch.csv` | Path to source CSV for ingestion |
 | `DEBUG` | `false` | Enable debug mode |
 | `API_TITLE` | `Retraction Watch API` | OpenAPI title |
-| `API_VERSION` | `0.1.0` | API version string |
+| `API_VERSION` | `0.2.0` | API version string |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:8000` | Comma-separated allowed browser origins |
 | `RETRACTION_API_URL` | `https://retraction-api.onrender.com` | Base URL used by the MCP server |
 | `RETRACTION_API_TIMEOUT` | `10` | MCP-to-API request timeout in seconds |
@@ -194,7 +194,9 @@ For public MCP deployments, set `RETRACTION_MCP_ALLOWED_HOSTS` to the public hos
 python scripts/ingest_csv.py
 ```
 
-The importer validates the CSV, builds a temporary SQLite database, rebuilds FTS indexes, verifies row counts, foreign keys, triggers, and `PRAGMA integrity_check`, then atomically replaces the configured database.
+The importer validates the CSV, builds a temporary SQLite database, rebuilds FTS indexes, verifies row counts, foreign keys, triggers, `PRAGMA integrity_check`, and FTS index/content consistency, then atomically replaces the configured database. CSV validation rejects missing or duplicate headers, malformed quoting, incorrect row widths, empty titles, and invalid or duplicate positive integer record IDs. UTF-8 files with or without a byte-order mark are accepted.
+
+FTS startup builds an index for existing articles when needed and checks existing indexes against their content table using [FTS5 integrity-check with rank=1](https://www.sqlite.org/fts5.html#the_integrity_check_command). A stale index is rebuilt and checked again; an unrecoverable error fails startup instead of silently returning incomplete search results.
 
 A failed import leaves the existing database untouched. Sentinel values (`"unavailable"` for DOIs and `"0"` for PubMed IDs) are stored as `NULL`.
 
@@ -242,8 +244,8 @@ Parameters: `skip` (default `0`), `limit` (default `20`, maximum `100`), `journa
 | `GET /articles/{record_id}` | Full article details (including latency); returns 404 if the record does not exist |
 | `GET /lookup/doi/{doi}` | Look up a record by original publication DOI or retraction notice DOI |
 | `GET /lookup/pubmed/{pubmed_id}` | Look up a record by original publication PubMed ID or retraction notice PubMed ID |
-| `POST /lookup/batch` | Screen a list of DOIs and PubMed IDs; returns matched retracted items and clean identifiers |
-| `GET /lookup/pubpeer` | Retrieve PubPeer whistleblower thread URL and community discussion context |
+| `POST /lookup/batch` | Screen DOIs and PubMed IDs; returns matching notice records, notice-type counts, and identifiers not found |
+| `GET /lookup/pubpeer` | Retrieve a PubPeer publication or search URL and the source notes |
 | `GET /search?q=...` | FTS5 search over titles, journals, authors, notes, and institutions |
 | `GET /search/investigation?q=...` | Narrative FTS5 search returning institutional findings, committee notes, and PubPeer links |
 | `GET /search/taxonomy` | Retrieve the standardized scientific misconduct taxonomy and concept mappings |
@@ -261,6 +263,39 @@ Parameters: `skip` (default `0`), `limit` (default `20`, maximum `100`), `journa
 The statistics endpoints accept `limit`, defaulting to `10` and capped at `100`.
 
 </details>
+
+## Version 0.2 response changes
+
+Database matches are notice records. A correction, expression of concern, or reinstatement is not counted as a retraction. A missing database match does not establish that an article is reliable. Historical records also do not, by themselves, resolve a paper's current status; review related notices and reinstatements together.
+
+For `POST /lookup/batch` and the MCP `batch_check_citations` tool:
+
+| Field | Meaning |
+|---|---|
+| `screened_count` | Unique nonempty DOIs plus unique positive PubMed IDs submitted |
+| `matched_identifier_count` | Screened identifiers matching at least one record |
+| `not_found_count` | Screened identifiers with no matching record |
+| `matched_record_count` | Distinct database records matched by any identifier |
+| `retracted_count` | Matched records whose notice type is `Retraction` |
+| `counts_by_nature` | Matched record counts by notice type |
+| `records` | All matched notice records, including their original `retraction_nature` |
+| `unmatched_dois`, `unmatched_pubmed_ids` | Unique identifiers not found |
+
+DOIs are trimmed and compared case-insensitively; the first submitted spelling is retained for display. Blank DOIs and nonpositive PubMed IDs are omitted. `screened_count = matched_identifier_count + not_found_count`. A DOI and PMID pointing to one record count as two matched identifiers and one matched record; one identifier can also match several notice records.
+
+**Client migration:** replace `clean_count` with `not_found_count` and `retractions` with `records`. Those old batch fields have been removed. `retracted_count` now counts only retraction notices, rather than all matches. Deploy the API and MCP server together and update API consumers for this response contract.
+
+Summary, journal, author, and dossier responses now distinguish `total_records` from `total_retractions`. Notice breakdowns use `counts_by_nature` (or the existing `retraction_natures` field in the database summary), with canonical names `Retraction`, `Correction`, `Expression of concern`, and `Reinstatement`; other labels are retained.
+
+Top journals/reasons/countries, latency statistics, and cluster counts cover retraction notices only. Journal yearly counts, top reasons, and latency also cover retractions only. Journal profiles retain counts for all notice types. Author and dossier article lists, top reasons, and top journals cover all matching notices; dossier first/latest retraction dates cover only retractions. Database-wide unique journal/publisher and paywall counts cover all notices.
+
+PubPeer search links are preserved as search links. A publication link is preferred when both are present in the notes; a search link alone does not establish the existence of a discussion thread.
+
+## Continuous integration
+
+`Code CI` runs on pushes, pull requests, and manual dispatch. It runs Ruff, pytest, and full-snapshot ingestion into a temporary database on Python 3.10 and 3.13.
+
+`Sync Retraction Data` runs on its daily schedule or manual dispatch. It runs lint and tests, downloads the source CSV, validates its structure, and ingests it into a temporary database before committing the CSV. Validation or ingestion failures stop publication. Sync runs for the same branch are serialized. The sync performs its own checks because commits made with GitHub's workflow token do not trigger a separate push workflow.
 
 <details>
 <summary><strong>Project structure</strong></summary>

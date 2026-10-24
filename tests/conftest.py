@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import main as app_module
 from app.database import Base, ensure_fts
 from app.dependencies import get_db
 from app.main import app
@@ -93,7 +94,10 @@ def override_get_db() -> Generator[Session, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(monkeypatch):
+    # The application lifespan must use the test database too, not the local file.
+    monkeypatch.setattr(app_module, "create_tables", lambda: Base.metadata.create_all(engine))
+    monkeypatch.setattr(app_module, "ensure_fts", lambda: ensure_fts(engine))
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS retractions_fts"))
     Base.metadata.create_all(bind=engine)
@@ -108,6 +112,8 @@ def setup_db():
 @pytest.fixture
 def client():
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()

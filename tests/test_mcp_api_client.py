@@ -55,8 +55,11 @@ def api_response(request: httpx.Request) -> httpx.Response:
             json={
                 "screened_count": 1,
                 "retracted_count": 1,
-                "clean_count": 0,
-                "retractions": [
+                "not_found_count": 0,
+                "matched_identifier_count": 1,
+                "matched_record_count": 1,
+                "counts_by_nature": {"Retraction": 1},
+                "records": [
                     {
                         **ARTICLE_SUMMARY,
                         "latency_days": 100,
@@ -77,6 +80,8 @@ def api_response(request: httpx.Request) -> httpx.Response:
             200,
             json={
                 "author": "Jane Smith",
+                "total_records": 1,
+                "counts_by_nature": {"Retraction": 1},
                 "total_retractions": 1,
                 "top_reasons": [{"reason": "Fake Data", "count": 1}],
                 "top_journals": [{"journal": "Test Journal", "count": 1}],
@@ -89,6 +94,8 @@ def api_response(request: httpx.Request) -> httpx.Response:
             json={
                 "target_type": "author",
                 "target_name": "Jane Smith",
+                "total_records": 1,
+                "counts_by_nature": {"Retraction": 1},
                 "total_retractions": 1,
                 "first_retraction_date": "2020-06-15",
                 "latest_retraction_date": "2020-06-15",
@@ -128,6 +135,8 @@ def api_response(request: httpx.Request) -> httpx.Response:
             200,
             json={
                 "journal": "Test Journal",
+                "total_records": 1,
+                "counts_by_nature": {"Retraction": 1},
                 "total_retractions": 1,
                 "average_latency_days": 100.0,
                 "top_reasons": [{"reason": "Fake Data", "count": 1}],
@@ -138,6 +147,7 @@ def api_response(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json={
+                "total_records": 1,
                 "total_retractions": 1,
                 "unique_journals": 1,
                 "unique_publishers": 1,

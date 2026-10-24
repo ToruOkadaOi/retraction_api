@@ -52,7 +52,9 @@ def test_ingest_builds_and_promotes_valid_database(tmp_path, encoding):
     assert result.subjects == 1
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM retractions").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM retractions_fts").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT rowid FROM retractions_fts WHERE retractions_fts MATCH 'Atomic'"
+        ).fetchall() == [(1,)]
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
@@ -63,8 +65,27 @@ def test_ingest_keeps_live_database_when_import_fails(tmp_path):
     database_path.write_bytes(original)
     write_source_csv(csv_path, [source_row(record_id="not-an-integer")])
 
-    with pytest.raises(ValueError, match="invalid literal"):
+    with pytest.raises(ValueError, match="invalid Record ID"):
         ingest(csv_path, sqlite_url(database_path))
 
+    assert database_path.read_bytes() == original
+    assert list(tmp_path.glob(".retraction_watch.db.*.tmp*")) == []
+
+
+def test_ingest_keeps_live_database_when_index_validation_fails(tmp_path, monkeypatch):
+    import scripts.ingest_csv as importer
+
+    csv_path = tmp_path / "source.csv"
+    database_path = tmp_path / "retraction_watch.db"
+    original = b"existing live database"
+    database_path.write_bytes(original)
+    write_source_csv(csv_path, [source_row()])
+
+    def invalid_index(connection):
+        raise RuntimeError("FTS integrity failure")
+
+    monkeypatch.setattr(importer, "check_fts_integrity", invalid_index)
+    with pytest.raises(RuntimeError, match="FTS integrity failure"):
+        ingest(csv_path, sqlite_url(database_path))
     assert database_path.read_bytes() == original
     assert list(tmp_path.glob(".retraction_watch.db.*.tmp*")) == []

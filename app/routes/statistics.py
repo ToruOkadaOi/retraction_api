@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
+from app.notices import count_notice_types, is_retraction, notice_type, retraction_filter
 from app.schemas import (
     BatchRetractionItem,
     CountryStatistic,
@@ -30,7 +31,7 @@ def top_journals(
 ) -> list[JournalStatistic]:
     rows = (
         db.query(Retraction.journal, func.count(Retraction.record_id).label("count"))
-        .filter(Retraction.journal != "")
+        .filter(Retraction.journal != "", retraction_filter())
         .group_by(Retraction.journal)
         .order_by(func.count(Retraction.record_id).desc())
         .limit(limit)
@@ -46,6 +47,8 @@ def top_reasons(
 ) -> list[ReasonStatistic]:
     rows = (
         db.query(RetractionReason.reason, func.count(RetractionReason.id).label("count"))
+        .join(Retraction)
+        .filter(retraction_filter())
         .group_by(RetractionReason.reason)
         .order_by(func.count(RetractionReason.id).desc())
         .limit(limit)
@@ -61,6 +64,8 @@ def top_countries(
 ) -> list[CountryStatistic]:
     rows = (
         db.query(RetractionCountry.country, func.count(RetractionCountry.id).label("count"))
+        .join(Retraction)
+        .filter(retraction_filter())
         .group_by(RetractionCountry.country)
         .order_by(func.count(RetractionCountry.id).desc())
         .limit(limit)
@@ -71,7 +76,7 @@ def top_countries(
 
 @router.get("/summary")
 def get_database_summary(db: Session = Depends(get_db)) -> DatabaseSummary:
-    total_retractions = db.query(func.count(Retraction.record_id)).scalar() or 0
+    total_records = db.query(func.count(Retraction.record_id)).scalar() or 0
     unique_journals = (
         db.query(func.count(func.distinct(Retraction.journal)))
         .filter(Retraction.journal != "")
@@ -90,7 +95,9 @@ def get_database_summary(db: Session = Depends(get_db)) -> DatabaseSummary:
         .group_by(Retraction.retraction_nature)
         .all()
     )
-    retraction_natures = {r[0]: r[1] for r in nature_rows if r[0]}
+    retraction_natures: Counter = Counter()
+    for nature, count in nature_rows:
+        retraction_natures[notice_type(nature)] += count
 
     paywall_rows = (
         db.query(Retraction.paywalled, func.count(Retraction.record_id))
@@ -103,7 +110,8 @@ def get_database_summary(db: Session = Depends(get_db)) -> DatabaseSummary:
     top_countries_list = top_countries(limit=10, db=db)
 
     return DatabaseSummary(
-        total_retractions=total_retractions,
+        total_records=total_records,
+        total_retractions=retraction_natures.get("Retraction", 0),
         unique_journals=unique_journals,
         unique_publishers=unique_publishers,
         retraction_natures=retraction_natures,
@@ -124,18 +132,19 @@ def get_journal_profile(journal: str, db: Session = Depends(get_db)) -> JournalP
     if not records:
         raise HTTPException(status_code=404, detail="Journal not found")
 
-    total_count = len(records)
+    counts_by_nature = count_notice_types(r.retraction_nature for r in records)
+    retracted = [r for r in records if is_retraction(r.retraction_nature)]
     canonical_name = records[0].journal
 
     latencies = [
         (r.retraction_date - r.original_paper_date).days
-        for r in records
-        if r.retraction_date and r.original_paper_date
+        for r in retracted
+        if r.retraction_date and r.original_paper_date and r.retraction_date >= r.original_paper_date
     ]
     avg_latency = round(statistics.mean(latencies), 1) if latencies else None
 
     reason_counts = Counter()
-    for r in records:
+    for r in retracted:
         for reason in r.reasons:
             reason_counts[reason.reason] += 1
     top_reasons_list = [
@@ -144,13 +153,15 @@ def get_journal_profile(journal: str, db: Session = Depends(get_db)) -> JournalP
     ]
 
     yearly_counts_raw = Counter(
-        str(r.retraction_date.year) for r in records if r.retraction_date
+        str(r.retraction_date.year) for r in retracted if r.retraction_date
     )
     yearly_counts = dict(sorted(yearly_counts_raw.items()))
 
     return JournalProfile(
         journal=canonical_name,
-        total_retractions=total_count,
+        total_records=len(records),
+        total_retractions=len(retracted),
+        counts_by_nature=counts_by_nature,
         average_latency_days=avg_latency,
         top_reasons=top_reasons_list,
         yearly_counts=yearly_counts,
@@ -182,6 +193,7 @@ def analyze_retraction_latency(
     db: Session = Depends(get_db),
 ) -> RetractionLatencyAnalysis:
     query = db.query(Retraction).filter(
+        retraction_filter(),
         Retraction.retraction_date.isnot(None),
         Retraction.original_paper_date.isnot(None),
     )
@@ -278,7 +290,7 @@ def detect_retraction_clusters(
             year_col.label("year"),
             func.count(Retraction.record_id).label("count"),
         )
-        .filter(Retraction.journal != "", Retraction.retraction_date.isnot(None))
+        .filter(Retraction.journal != "", Retraction.retraction_date.isnot(None), retraction_filter())
     )
     if year:
         query = query.filter(year_col == str(year))
@@ -296,6 +308,7 @@ def detect_retraction_clusters(
         records = (
             db.query(Retraction)
             .filter(
+                retraction_filter(),
                 Retraction.journal == journal_name,
                 func.strftime("%Y", Retraction.retraction_date) == cluster_year,
             )

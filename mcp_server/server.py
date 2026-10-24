@@ -131,8 +131,10 @@ async def batch_check_citations(
 ) -> dict[str, Any]:
     """Screen a list of DOIs and/or PubMed IDs in a single call.
 
-    Returns an objective classification: which papers are retracted (with dates, reasons,
-    and matched identifier) and which have no retraction records found in the database.
+    Returns matching notice records and counts by notice type, plus identifiers not found.
+    Retractions, corrections, expressions of concern, and reinstatements remain distinct.
+    Counts refer to notice records, not the current status of a paper; no match does not
+    establish that a paper is reliable. DOI matching and counts ignore case and duplicates.
     """
     return _dump(await api_client.batch_lookup(dois=dois, pubmed_ids=pubmed_ids))
 
@@ -168,7 +170,7 @@ async def get_pubpeer_evidence(
     record_id: Annotated[int | None, Field(description="Retraction Watch record ID")] = None,
     doi: Annotated[str | None, Field(description="Article DOI")] = None,
 ) -> dict[str, Any]:
-    """Retrieve the PubPeer whistleblower and post-publication peer review discussion link for a retracted article."""
+    """Retrieve a PubPeer publication or search link from an article record. A search link does not establish that a discussion thread exists."""
     return _dump(await api_client.get_pubpeer_evidence(record_id=record_id, doi=doi))
 
 
@@ -195,7 +197,7 @@ async def search_author_retractions(
     skip: Skip = 0,
     limit: PageLimit = 20,
 ) -> dict[str, Any]:
-    """Search an author's retraction record, returning total retractions, top reasons, journals, and articles."""
+    """Search an author's notice records, distinguishing total records from retractions and returning counts by notice type. Reasons, journals, and articles cover all matched notices."""
     return _dump(await api_client.search_author(author_name, skip=skip, limit=limit))
 
 
@@ -204,7 +206,7 @@ async def generate_integrity_dossier(
     target_type: Annotated[str, Field(description="Must be 'author' or 'institution'")],
     target_name: Annotated[str, Field(min_length=2, description="Name of the author or institution")],
 ) -> dict[str, Any]:
-    """Generate an investigative research integrity dossier synthesizing retraction count, timeline, and narrative notes."""
+    """Generate a notice-record dossier with counts by notice type, retraction-only dates, and narrative notes. Name matches may include different people."""
     return _dump(await api_client.generate_dossier(target_type=target_type, target_name=target_name))
 
 
@@ -230,13 +232,13 @@ async def detect_retraction_clusters(
 async def get_journal_profile(
     journal: Annotated[str, Field(min_length=1, description="Journal name")],
 ) -> dict[str, Any]:
-    """Get a journal's complete retraction track record, annual trend, top reasons, and average latency."""
+    """Get a journal's notice counts by type, with annual trend, reasons, and latency for retraction notices only."""
     return _dump(await api_client.get_journal_profile(journal))
 
 
 @mcp.tool()
 async def get_database_summary() -> dict[str, Any]:
-    """Get overall Retraction Watch database metrics, counts, nature distribution, and paywalled ratio."""
+    """Get total notice records, retraction count, notice-type distribution, and database-wide journal, publisher, and paywall counts. Top reasons and countries cover retractions only."""
     return _dump(await api_client.get_database_summary())
 
 
@@ -336,9 +338,9 @@ def screen_bibliography(citations_text: str) -> str:
         "Please screen the following bibliography for retracted articles, expressions of concern, "
         "or corrections. Extract all DOIs and PubMed IDs from the text, call the `batch_check_citations` "
         "tool with the extracted identifiers, and present a structured audit report with:\n"
-        "1. Summary: Total screened, total retracted, and total clean citations.\n"
-        "2. Flagged Works: Detail for any flagged paper (Title, Journal, Retraction Date, Reasons).\n"
-        "3. Advice: Recommended actions for the authors (e.g. replacing retracted citations).\n\n"
+        "1. Summary: Unique identifiers screened, matched identifiers, identifiers not found, and matched notice records by type.\n"
+        "2. Matching Notices: Title, journal, notice type, date, reasons, and identifiers. Distinguish retractions, corrections, expressions of concern, and reinstatements.\n"
+        "3. Interpretation: A missing match is not proof of reliability. These are notice records, not a resolved current-status determination; review all notices, including reinstatements, before recommending action.\n\n"
         f"Bibliography Text:\n{citations_text}"
     )
 
@@ -350,8 +352,8 @@ def author_integrity_audit(author_name: str) -> str:
         f"Conduct a comprehensive academic integrity audit on researcher '{author_name}' using "
         "the Retraction Watch database.\n"
         "1. Call `generate_integrity_dossier` and `search_author_retractions` for the author.\n"
-        "2. Summarize their total retractions, timeline (first vs latest), top journals, and recurring reasons.\n"
-        "3. Review the narrative investigative notes for details from institutional committees or whistleblower investigations.\n"
+        "2. Separate total notice records from retractions using counts_by_nature. Explain that the first/latest dates cover retractions, while journals and reasons cover all matched notices. Do not infer a paper's current status solely from historical notices.\n"
+        "3. Check that author-name matches refer to the same person before attributing records; review the narrative notes for documented findings and distinguish allegations from findings.\n"
         "4. Provide a factual assessment of their retraction record."
     )
 

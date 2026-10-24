@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models import Retraction
+from app.notices import count_notice_types
 from app.schemas import (
     ArticleDetail,
     BatchLookupRequest,
@@ -53,9 +54,12 @@ def batch_lookup(
     request: BatchLookupRequest,
     db: Session = Depends(get_db),
 ) -> BatchLookupResponse:
-    clean_dois = [d.strip() for d in request.dois if d and d.strip()]
-    doi_lookup_map = {d.lower(): d for d in clean_dois}
-    clean_pmids = list({p for p in request.pubmed_ids if p and p > 0})
+    # Match and count canonical identifiers; keep the first spelling for display.
+    doi_lookup_map: dict[str, str] = {}
+    for doi in request.dois:
+        if doi.strip():
+            doi_lookup_map.setdefault(doi.strip().lower(), doi.strip())
+    clean_pmids = list(dict.fromkeys(p for p in request.pubmed_ids if p > 0))
 
     matched_records: dict[int, tuple[Retraction, list[str]]] = {}
     matched_dois: set[str] = set()
@@ -78,11 +82,11 @@ def batch_lookup(
             if orig_lower in doi_lookup_map:
                 orig_input = doi_lookup_map[orig_lower]
                 matches.append(f"original_paper_doi: {orig_input}")
-                matched_dois.add(orig_input)
+                matched_dois.add(orig_lower)
             if ret_lower in doi_lookup_map:
                 ret_input = doi_lookup_map[ret_lower]
                 matches.append(f"retraction_doi: {ret_input}")
-                matched_dois.add(ret_input)
+                matched_dois.add(ret_lower)
 
             if r.record_id in matched_records:
                 matched_records[r.record_id][1].extend(matches)
@@ -129,21 +133,23 @@ def batch_lookup(
             matched_by="; ".join(sorted(set(matches))),
             reasons=[reason.reason for reason in r.reasons],
         )
-        for r, matches in matched_records.values()
+        for _, (r, matches) in sorted(matched_records.items())
     ]
 
-    unmatched_dois = [d for d in clean_dois if d not in matched_dois]
+    unmatched_dois = [display for key, display in doi_lookup_map.items() if key not in matched_dois]
     unmatched_pmids = [p for p in clean_pmids if p not in matched_pmids]
 
-    total_screened = len(clean_dois) + len(clean_pmids)
-    retracted_count = len(retraction_items)
-    clean_count = len(unmatched_dois) + len(unmatched_pmids)
+    total_screened = len(doi_lookup_map) + len(clean_pmids)
+    counts_by_nature = count_notice_types(item.retraction_nature for item in retraction_items)
 
     return BatchLookupResponse(
         screened_count=total_screened,
-        retracted_count=retracted_count,
-        clean_count=clean_count,
-        retractions=retraction_items,
+        matched_identifier_count=len(matched_dois) + len(matched_pmids),
+        not_found_count=len(unmatched_dois) + len(unmatched_pmids),
+        matched_record_count=len(retraction_items),
+        retracted_count=counts_by_nature.get("Retraction", 0),
+        counts_by_nature=counts_by_nature,
+        records=retraction_items,
         unmatched_dois=unmatched_dois,
         unmatched_pubmed_ids=unmatched_pmids,
     )
@@ -178,7 +184,7 @@ def get_pubpeer_evidence(
     if not pubpeer_url:
         raise HTTPException(
             status_code=404,
-            detail="No PubPeer discussion thread found for this article",
+            detail="No PubPeer publication or search link found for this article",
         )
 
     return PubPeerEvidence(

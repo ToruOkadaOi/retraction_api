@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
-from app.database import Base, ensure_fts
+from app.database import Base, check_fts_integrity, ensure_fts
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
 from scripts.validate_csv import validate_csv
 
@@ -109,13 +109,11 @@ def _build_retraction(row: dict[str, str]) -> Retraction:
 def _validate_database(engine: Engine, expected_rows: int) -> tuple[int, int, int]:
     with engine.connect() as connection:
         article_count = connection.execute(text("SELECT COUNT(*) FROM retractions")).scalar_one()
-        fts_count = connection.execute(text("SELECT COUNT(*) FROM retractions_fts")).scalar_one()
         if article_count != expected_rows:
             raise RuntimeError(
                 f"Imported {article_count} records but CSV validation found {expected_rows}"
             )
-        if fts_count != article_count:
-            raise RuntimeError(f"FTS contains {fts_count} records but expected {article_count}")
+        check_fts_integrity(connection)
 
         integrity = [row[0] for row in connection.execute(text("PRAGMA integrity_check"))]
         if integrity != ["ok"]:

@@ -1,6 +1,6 @@
 [project]
 name = "retraction-watch-api"
-version = "0.1.0"
+version = "0.2.0"
 description = "REST API for Retraction Watch database"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models import Retraction, RetractionReason
+from app.notices import count_notice_types, is_retraction
 from app.schemas import (
     ArticleListItem,
     AuthorRetractionSummary,
@@ -108,6 +109,7 @@ def search_author(
 
     total = db.query(func.count(Retraction.record_id)).filter(author_filter).scalar() or 0
     all_matched = db.query(Retraction).filter(author_filter).all()
+    counts_by_nature = count_notice_types(r.retraction_nature for r in all_matched)
 
     reason_counter = Counter(
         reason.reason for r in all_matched for reason in r.reasons
@@ -146,7 +148,9 @@ def search_author(
 
     return AuthorRetractionSummary(
         author=author.strip(),
-        total_retractions=total,
+        total_records=total,
+        total_retractions=counts_by_nature.get("Retraction", 0),
+        counts_by_nature=counts_by_nature,
         top_reasons=top_reasons,
         top_journals=top_journals,
         articles=articles,
@@ -177,7 +181,11 @@ def get_integrity_dossier(
             detail=f"No records found for {target_type} '{target_name}'",
         )
 
-    retraction_dates = [r.retraction_date for r in records if r.retraction_date]
+    counts_by_nature = count_notice_types(r.retraction_nature for r in records)
+    retraction_dates = [
+        r.retraction_date for r in records
+        if r.retraction_date and is_retraction(r.retraction_nature)
+    ]
     first_date = min(retraction_dates) if retraction_dates else None
     latest_date = max(retraction_dates) if retraction_dates else None
 
@@ -219,7 +227,9 @@ def get_integrity_dossier(
     return IntegrityDossier(
         target_type=target_type,
         target_name=target_name.strip(),
-        total_retractions=len(records),
+        total_records=len(records),
+        total_retractions=counts_by_nature.get("Retraction", 0),
+        counts_by_nature=counts_by_nature,
         first_retraction_date=first_date,
         latest_retraction_date=latest_date,
         top_reasons=top_reasons,

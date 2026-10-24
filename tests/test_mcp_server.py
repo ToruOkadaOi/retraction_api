@@ -6,7 +6,11 @@ from mcp.client.session import ClientSession
 from mcp.shared.memory import create_connected_server_and_client_session
 
 import mcp_server.server as server
+from app.dependencies import get_db
+from app.main import app
+from app.models import Retraction
 from mcp_server.api_client import RetractionAPIClient
+from tests.conftest import TestingSessionLocal, override_get_db
 from tests.test_mcp_api_client import api_response
 
 
@@ -111,6 +115,33 @@ async def test_mcp_prompts(mcp_session: ClientSession):
     prompt_res = await mcp_session.get_prompt("screen_bibliography", {"citations_text": "Sample text"})
     assert len(prompt_res.messages) == 1
     assert "Sample text" in prompt_res.messages[0].content.text
+    assert "identifiers not found" in prompt_res.messages[0].content.text
+    assert "total clean" not in prompt_res.messages[0].content.text
+
+
+@pytest.mark.anyio
+async def test_mcp_screening_preserves_real_api_notice_counts(mcp_session, monkeypatch):
+    with TestingSessionLocal() as db:
+        db.get(Retraction, 2).original_paper_doi = "10.1000/concern"
+        db.commit()
+    monkeypatch.setattr(server, "api_client", RetractionAPIClient(
+        "http://api.test", transport=httpx.ASGITransport(app=app)
+    ))
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        result = await mcp_session.call_tool("batch_check_citations", {
+            "dois": ["10.1000/CONCERN", "10.1000/concern", "10.1000/missing"]
+        })
+        assert result.isError is False
+        data = result.structuredContent
+        assert data["screened_count"] == 2
+        assert data["matched_identifier_count"] == data["not_found_count"] == 1
+        assert data["matched_record_count"] == 1
+        assert data["retracted_count"] == 0
+        assert data["counts_by_nature"] == {"Expression of concern": 1}
+        assert "clean_count" not in data
+    finally:
+        app.dependency_overrides.clear()
 
 
 

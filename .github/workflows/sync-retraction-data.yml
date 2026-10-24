@@ -8,21 +8,45 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sync-retraction-data-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e '.[dev]'
+
+      - name: Check code and regression tests
+        run: |
+          python -m ruff check app mcp_server scripts tests
+          python -m pytest -q
+
       - name: Fetch latest CSV from retraction_watch_data
         run: |
-          curl -fsSL -o retraction_watch.csv \
+          curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 -o retraction_watch.csv \
             https://raw.githubusercontent.com/ToruOkadaOi/retraction_watch_data/main/retraction_watch.csv
 
       - name: Validate downloaded CSV
         run: python scripts/validate_csv.py retraction_watch.csv
+
+      - name: Validate ingestion before publishing
+        env:
+          CSV_PATH: retraction_watch.csv
+          DATABASE_URL: sqlite:///${{ runner.temp }}/retraction-sync.db
+        run: python scripts/ingest_csv.py
 
       - name: Check if CSV changed
         id: check

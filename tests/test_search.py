@@ -129,4 +129,27 @@ class TestSearch:
         resp = client.get("/search/concept/alien_abduction")
         assert resp.status_code == 404
 
+    def test_author_and_dossier_separate_notices_from_retractions(self, client):
+        author = client.get("/search/author?author=Alice").json()
+        assert author["total_records"] == 1
+        assert author["total_retractions"] == 0
+        assert author["counts_by_nature"] == {"Expression of concern": 1}
+        assert author["articles"][0]["record_id"] == 2
+        dossier = client.get("/search/dossier?target_type=author&target_name=Alice").json()
+        assert dossier["total_records"] == 1
+        assert dossier["total_retractions"] == 0
+        assert dossier["counts_by_nature"] == {"Expression of concern": 1}
+        assert dossier["first_retraction_date"] is None
+        assert dossier["latest_retraction_date"] is None
+
+    def test_dossier_retraction_dates_exclude_other_notice_dates(self, client):
+        with TestingSessionLocal() as db:
+            db.get(Retraction, 2).authors_raw = "Jane Smith"
+            db.commit()
+        dossier = client.get("/search/dossier?target_name=Jane").json()
+        assert dossier["total_records"] == 2
+        assert dossier["total_retractions"] == 1
+        assert dossier["counts_by_nature"] == {"Retraction": 1, "Expression of concern": 1}
+        assert dossier["first_retraction_date"] == dossier["latest_retraction_date"] == "2020-06-15"
+
 
