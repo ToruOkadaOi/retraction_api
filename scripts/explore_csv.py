@@ -39,7 +39,7 @@ class RetractionStats:
 
 stats = RetractionStats()
 
-with open(CSV_PATH, encoding="utf-8", newline="") as f:
+with open(CSV_PATH, encoding="utf-8-sig", newline="") as f:
     reader = csv.DictReader(f)
     for row in reader:
         stats.row_count += 1

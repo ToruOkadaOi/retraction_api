@@ -166,7 +166,7 @@ def ingest(
     try:
         try:
             Base.metadata.create_all(engine)
-            with source_path.open(encoding="utf-8", newline="") as file:
+            with source_path.open(encoding="utf-8-sig", newline="") as file:
                 reader = csv.DictReader(file)
                 batch: list[Retraction] = []
 

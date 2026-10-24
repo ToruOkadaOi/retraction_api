@@ -29,7 +29,7 @@ REQUIRED_COLUMNS = {
 
 
 def validate_csv(path: Path) -> int:
-    with path.open(encoding="utf-8", newline="") as file:
+    with path.open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         columns = set(reader.fieldnames or [])
         missing = REQUIRED_COLUMNS - columns

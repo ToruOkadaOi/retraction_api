@@ -7,9 +7,10 @@ from scripts.ingest_csv import ingest
 from scripts.validate_csv import REQUIRED_COLUMNS
 
 
-def write_source_csv(path, rows):
-    with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=sorted(REQUIRED_COLUMNS))
+def write_source_csv(path, rows, encoding="utf-8"):
+    with path.open("w", encoding=encoding, newline="") as file:
+        columns = ["Record ID", *sorted(REQUIRED_COLUMNS - {"Record ID"})]
+        writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -36,11 +37,12 @@ def sqlite_url(path):
     return f"sqlite:///{path}"
 
 
-def test_ingest_builds_and_promotes_valid_database(tmp_path):
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_ingest_builds_and_promotes_valid_database(tmp_path, encoding):
     csv_path = tmp_path / "source.csv"
     database_path = tmp_path / "retraction_watch.db"
     database_path.write_bytes(b"previous database")
-    write_source_csv(csv_path, [source_row()])
+    write_source_csv(csv_path, [source_row()], encoding=encoding)
 
     result = ingest(csv_path, sqlite_url(database_path))
 

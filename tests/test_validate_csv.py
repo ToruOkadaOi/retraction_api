@@ -5,19 +5,21 @@ import pytest
 from scripts.validate_csv import REQUIRED_COLUMNS, validate_csv
 
 
-def write_csv(path, columns, rows):
-    with path.open("w", encoding="utf-8", newline="") as file:
+def write_csv(path, columns, rows, encoding="utf-8"):
+    with path.open("w", encoding=encoding, newline="") as file:
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
 
-def test_validate_csv_accepts_valid_data(tmp_path):
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_validate_csv_accepts_valid_data(tmp_path, encoding):
     path = tmp_path / "data.csv"
     row = dict.fromkeys(REQUIRED_COLUMNS, "value")
     row["Record ID"] = "1"
     row["Title"] = "Test article"
-    write_csv(path, sorted(REQUIRED_COLUMNS), [row])
+    columns = ["Record ID", *sorted(REQUIRED_COLUMNS - {"Record ID"})]
+    write_csv(path, columns, [row], encoding=encoding)
 
     assert validate_csv(path) == 1
 
