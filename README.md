@@ -1,6 +1,6 @@
 # Retraction Watch API
 
-A REST API and MCP server for searching the [Retraction Watch](https://retractionwatch.com/) database of retractions, corrections, expressions of concern, and reinstatements. Built with FastAPI and SQLite.
+A REST API and MCP server for searching the [Retraction Watch database](https://gitlab.com/crossref/retraction-watch-data) of retractions, corrections, expressions of concern, and reinstatements. Built with FastAPI and SQLite.
 
 ## Hosted services
 

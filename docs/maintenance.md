@@ -2,6 +2,8 @@
 
 Setup and usage are in the [README](../README.md).
 
+Data source: [Crossref's Retraction Watch dataset](https://gitlab.com/crossref/retraction-watch-data). See the [dataset field definitions](https://retractionwatch.com/retraction-watch-database-user-guide/retraction-watch-database-user-guide-appendix-a-fields/) for the meaning of each source field.
+
 ## Version 0.2 response changes
 
 Database matches are notice records. A correction, expression of concern, or reinstatement is not counted as a retraction. A missing database match does not establish that an article is reliable. Historical records also do not, by themselves, resolve a paper's current status; review related notices and reinstatements together.
