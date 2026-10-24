@@ -117,7 +117,8 @@ Results distinguish retractions from other notice types. A missing match does no
 
 </details>
 
-## Run locally
+<details>
+<summary><strong>Run locally</strong></summary>
 
 Requires Python 3.10 or later.
 
@@ -143,6 +144,8 @@ RETRACTION_API_URL=http://localhost:8000 python -m mcp_server
 ```
 
 This starts the MCP server over stdio. For HTTP transport, also set `RETRACTION_MCP_TRANSPORT=streamable-http` and `RETRACTION_MCP_PORT=8001`.
+
+</details>
 
 <details>
 <summary><strong>Docker</strong></summary>
@@ -186,6 +189,4 @@ python -m ruff check app mcp_server scripts tests
 python -m pytest -q
 ```
 
-CI runs tests on Python 3.10 and 3.13, validates the complete CSV import, and checks the API and MCP containers together. A daily workflow refreshes the CSV after validation.
-
-See [maintenance and deployment](docs/maintenance.md) for configuration, ingestion checks, response changes, dependency updates, and deployment verification. Use `/ready` for hosting readiness checks; existing databases need reingestion to add dataset metadata.
+See [maintenance and deployment](docs/maintenance.md) for configuration and deployment details.
