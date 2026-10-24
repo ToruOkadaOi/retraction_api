@@ -17,6 +17,17 @@ A REST API and MCP server for searching the [Retraction Watch database](https://
 
 Hosted services may take a moment to wake up after being idle.
 
+<details>
+<summary><strong>Optional research skill</strong></summary>
+
+The [Retraction Watch research skill](skills/retraction-watch-research/SKILL.md) guides agents through citation screening and notice interpretation, including batching, source attribution, and ambiguous matches.
+
+To install, copy the `skills/retraction-watch-research/` folder from this repository into your agent's supported skills directory. Keep the folder name and `SKILL.md` intact, then reload skills as required by your client. Connect the MCP server below, or give the agent HTTP access to the API. Installing the skill supplies instructions; it does not configure a connection.
+
+Try: “Use the Retraction Watch research skill to screen these citations and report matching notice types and dataset provenance.”
+
+</details>
+
 #### VS Code
 
 Create `.vscode/mcp.json`:
