@@ -24,8 +24,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: requirements-dev.lock
       - name: Install dependencies
-        run: python -m pip install -e '.[dev]'
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+          python -m pip check
       - name: Lint
         run: python -m ruff check app mcp_server scripts tests
       - name: Test
@@ -35,3 +39,39 @@ jobs:
           CSV_PATH: retraction_watch.csv
           DATABASE_URL: sqlite:///${{ runner.temp }}/retraction-ci.db
         run: python scripts/ingest_csv.py
+
+  containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build locked API and MCP images
+        run: |
+          docker build -t retraction-api:ci .
+          docker build -f Dockerfile.mcp -t retraction-mcp:ci .
+      - name: Start services
+        run: |
+          docker network create retraction-ci
+          docker run -d --name retraction-api --network retraction-ci retraction-api:ci
+          docker run -d --name retraction-mcp --network retraction-ci -e RETRACTION_API_URL=http://retraction-api:8000 retraction-mcp:ci
+      - name: Verify readiness, metadata, and MCP screening
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker exec retraction-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec retraction-api python scripts/check_deployment.py --api-url http://retraction-api:8000 --mcp-url http://retraction-mcp:8000/mcp
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs retraction-api || true
+          docker logs retraction-mcp || true
+      - name: Stop test services
+        if: always()
+        run: |
+          docker rm -f retraction-api retraction-mcp || true
+          docker network rm retraction-ci || true

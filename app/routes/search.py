@@ -1,20 +1,19 @@
-from collections import Counter
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.dependencies import get_db
 from app.models import Retraction, RetractionReason
-from app.notices import count_notice_types, is_retraction
+from app.notices import retraction_filter
+from app.queries import article_summaries, journal_counts, notice_counts, reason_counts
 from app.schemas import (
     ArticleListItem,
     AuthorRetractionSummary,
     IntegrityDossier,
     InvestigationSearchItem,
-    JournalStatistic,
     PaginatedResponse,
-    ReasonStatistic,
     TaxonomyConcept,
 )
 from app.taxonomy import (
@@ -22,6 +21,7 @@ from app.taxonomy import (
     get_taxonomy_concepts,
     map_concept_to_tags,
 )
+from app.validation import FilterText, NameText, SearchText
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -40,7 +40,7 @@ def _fts_query(raw: str) -> str:
 
 @router.get("")
 def search_articles(
-    q: str = Query(..., min_length=1),
+    q: Annotated[SearchText, Query()],
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -61,7 +61,7 @@ def search_articles(
             text(
                 "SELECT rowid FROM retractions_fts "
                 "WHERE retractions_fts MATCH :q "
-                "ORDER BY rank LIMIT :limit OFFSET :skip"
+                "ORDER BY rank, rowid LIMIT :limit OFFSET :skip"
             ),
             {"q": query, "limit": limit, "skip": skip},
         ).all()
@@ -99,34 +99,21 @@ def search_articles(
 
 @router.get("/author")
 def search_author(
-    author: str = Query(..., min_length=2),
+    author: Annotated[NameText, Query()],
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> AuthorRetractionSummary:
     clean_author = author.strip().lower()
-    author_filter = func.lower(Retraction.authors_raw).contains(clean_author)
+    author_filter = func.lower(Retraction.authors_raw).contains(clean_author, autoescape=True)
 
-    total = db.query(func.count(Retraction.record_id)).filter(author_filter).scalar() or 0
-    all_matched = db.query(Retraction).filter(author_filter).all()
-    counts_by_nature = count_notice_types(r.retraction_nature for r in all_matched)
-
-    reason_counter = Counter(
-        reason.reason for r in all_matched for reason in r.reasons
-    )
-    journal_counter = Counter(r.journal for r in all_matched if r.journal)
-
-    top_reasons = [
-        ReasonStatistic(reason=reason, count=count)
-        for reason, count in reason_counter.most_common(5)
-    ]
-    top_journals = [
-        JournalStatistic(journal=journal, count=count)
-        for journal, count in journal_counter.most_common(5)
-    ]
+    counts_by_nature = notice_counts(db, author_filter)
+    total = sum(counts_by_nature.values())
+    top_reasons = reason_counts(db, author_filter, limit=5)
+    top_journals = journal_counts(db, author_filter, limit=5)
 
     paged_rows = (
-        db.query(Retraction)
+        article_summaries(db)
         .filter(author_filter)
         .order_by(Retraction.record_id)
         .offset(skip)
@@ -159,58 +146,35 @@ def search_author(
 
 @router.get("/dossier")
 def get_integrity_dossier(
+    target_name: Annotated[NameText, Query()],
     target_type: str = Query("author", pattern="^(author|institution)$"),
-    target_name: str = Query(..., min_length=2),
     db: Session = Depends(get_db),
 ) -> IntegrityDossier:
     clean_target = target_name.strip().lower()
     if target_type == "author":
-        target_filter = func.lower(Retraction.authors_raw).contains(clean_target)
+        target_filter = func.lower(Retraction.authors_raw).contains(clean_target, autoescape=True)
     else:
-        target_filter = func.lower(Retraction.institution).contains(clean_target)
+        target_filter = func.lower(Retraction.institution).contains(clean_target, autoescape=True)
 
-    records = (
-        db.query(Retraction)
-        .filter(target_filter)
-        .order_by(Retraction.retraction_date.desc().nullslast())
-        .all()
-    )
-    if not records:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No records found for {target_type} '{target_name}'",
-        )
+    counts_by_nature = notice_counts(db, target_filter)
+    total = sum(counts_by_nature.values())
+    if not total:
+        raise HTTPException(status_code=404, detail=f"No records found for {target_type} '{target_name}'")
 
-    counts_by_nature = count_notice_types(r.retraction_nature for r in records)
-    retraction_dates = [
-        r.retraction_date for r in records
-        if r.retraction_date and is_retraction(r.retraction_nature)
-    ]
-    first_date = min(retraction_dates) if retraction_dates else None
-    latest_date = max(retraction_dates) if retraction_dates else None
-
-    reason_counter = Counter(
-        reason.reason for r in records for reason in r.reasons
-    )
-    journal_counter = Counter(r.journal for r in records if r.journal)
-
-    top_reasons = [
-        ReasonStatistic(reason=reason, count=count)
-        for reason, count in reason_counter.most_common(10)
-    ]
-    top_journals = [
-        JournalStatistic(journal=journal, count=count)
-        for journal, count in journal_counter.most_common(10)
-    ]
-
-    seen_notes = set()
-    narrative_notes: list[str] = []
-    for r in records:
-        if r.notes and r.notes.strip() and r.notes.strip() not in seen_notes:
-            seen_notes.add(r.notes.strip())
-            narrative_notes.append(r.notes.strip())
-            if len(narrative_notes) >= 10:
-                break
+    first_date, latest_date = db.query(
+        func.min(Retraction.retraction_date), func.max(Retraction.retraction_date)
+    ).filter(target_filter, retraction_filter()).one()
+    top_reasons = reason_counts(db, target_filter, limit=10)
+    top_journals = journal_counts(db, target_filter, limit=10)
+    trimmed_note = func.trim(Retraction.notes)
+    narrative_notes = [row[0] for row in db.query(trimmed_note).filter(
+        target_filter, Retraction.notes.isnot(None), trimmed_note != ""
+    ).group_by(trimmed_note).order_by(
+        func.max(Retraction.retraction_date).desc().nullslast(), func.min(Retraction.record_id)
+    ).limit(10).all()]
+    records = article_summaries(db).filter(target_filter).order_by(
+        Retraction.retraction_date.desc().nullslast(), Retraction.record_id
+    ).limit(20).all()
 
     articles = [
         ArticleListItem(
@@ -221,13 +185,13 @@ def get_integrity_dossier(
             retraction_date=r.retraction_date,
             publisher=r.publisher,
         )
-        for r in records[:20]
+        for r in records
     ]
 
     return IntegrityDossier(
         target_type=target_type,
         target_name=target_name.strip(),
-        total_records=len(records),
+        total_records=total,
         total_retractions=counts_by_nature.get("Retraction", 0),
         counts_by_nature=counts_by_nature,
         first_retraction_date=first_date,
@@ -241,7 +205,7 @@ def get_integrity_dossier(
 
 @router.get("/investigation")
 def search_investigation_notes(
-    q: str = Query(..., min_length=1),
+    q: Annotated[SearchText, Query()],
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -259,7 +223,7 @@ def search_investigation_notes(
         text(
             "SELECT rowid FROM retractions_fts "
             "WHERE retractions_fts MATCH :q "
-            "ORDER BY rank LIMIT :limit OFFSET :skip"
+            "ORDER BY rank, rowid LIMIT :limit OFFSET :skip"
         ),
         {"q": query, "limit": limit, "skip": skip},
     ).all()
@@ -270,6 +234,7 @@ def search_investigation_notes(
 
     records = (
         db.query(Retraction)
+        .options(selectinload(Retraction.reasons))
         .filter(Retraction.record_id.in_(record_ids))
         .all()
     )
@@ -311,7 +276,7 @@ def get_taxonomy() -> list[TaxonomyConcept]:
 
 @router.get("/concept/{concept}")
 def search_by_concept(
-    concept: str,
+    concept: FilterText,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -336,7 +301,7 @@ def search_by_concept(
     records = (
         db.query(Retraction)
         .filter(filter_expr)
-        .order_by(Retraction.retraction_date.desc().nullslast())
+        .order_by(Retraction.retraction_date.desc().nullslast(), Retraction.record_id)
         .offset(skip)
         .limit(limit)
         .all()

@@ -37,6 +37,7 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
 
     assert {tool.name for tool in result.tools} == {
         "health_check",
+        "get_dataset_info",
         "list_articles",
         "get_article",
         "lookup_article_by_doi",
@@ -64,6 +65,7 @@ async def test_mcp_exposes_only_expected_read_tools(mcp_session: ClientSession):
     ("tool_name", "arguments"),
     [
         ("health_check", {}),
+        ("get_dataset_info", {}),
         ("list_articles", {"limit": 20}),
         ("get_article", {"record_id": 1}),
         ("lookup_article_by_doi", {"doi": "10.1000/test.doi"}),
@@ -98,10 +100,14 @@ async def test_mcp_resources(mcp_session: ClientSession):
     assert "retraction://stats/summary" in resource_uris
     assert "retraction://stats/top-reasons" in resource_uris
     assert "retraction://taxonomy" in resource_uris
+    assert "retraction://dataset" in resource_uris
 
     content = await mcp_session.read_resource("retraction://stats/summary")
     assert len(content.contents) == 1
     assert "total_retractions" in content.contents[0].text
+
+    content = await mcp_session.read_resource("retraction://dataset")
+    assert "source_sha256" in content.contents[0].text
 
 
 @pytest.mark.anyio
@@ -161,3 +167,16 @@ def test_main_uses_configured_transport(monkeypatch):
     server.main()
 
     assert calls == ["streamable-http"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("tool_name", "arguments"), [
+    ("batch_check_citations", {"dois": ["10.1000/example"] * 201}),
+    ("batch_check_citations", {"dois": ["10.1000/example"] * 100, "pubmed_ids": [1] * 101}),
+    ("search_articles", {"query": "   "}),
+    ("search_author_retractions", {"author_name": "   "}),
+    ("list_articles", {"institution": "   "}),
+])
+async def test_mcp_rejects_invalid_or_oversized_requests(mcp_session, tool_name, arguments):
+    result = await mcp_session.call_tool(tool_name, arguments)
+    assert result.isError is True

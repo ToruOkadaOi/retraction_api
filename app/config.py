@@ -5,10 +5,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/retraction_watch.db"
-    csv_path: Path = Path("data/retraction_watch.csv")
+    csv_path: Path = Path("retraction_watch.csv")
     debug: bool = False
     api_title: str = "Retraction Watch API"
-    api_version: str = "0.2.0"
+    api_version: str = "0.2.1"
     cors_origins: str = "http://localhost:3000,http://localhost:8000"
 
     @property

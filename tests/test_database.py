@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import Session
 
-from app.database import FTS_TABLE_DDL, Base, check_fts_integrity, ensure_fts
+from app.database import FTS_TABLE_DDL, Base, check_fts_integrity, ensure_fts, ensure_lookup_indexes
 from app.models import Retraction
 
 
@@ -67,3 +67,16 @@ def test_old_index_schema_is_rebuilt(populated_engine):
         ))
     ensure_fts(populated_engine)
     assert matches(populated_engine, "ExistingDiscovery") == [1]
+
+
+def test_lookup_indexes_migrate_existing_tables_and_are_idempotent(populated_engine):
+    with populated_engine.begin() as connection:
+        connection.execute(text("DROP INDEX ix_retractions_original_doi_normalized"))
+        connection.execute(text("DROP INDEX ix_retractions_retraction_doi_normalized"))
+    ensure_lookup_indexes(populated_engine)
+    ensure_lookup_indexes(populated_engine)
+    with populated_engine.connect() as connection:
+        indexes = connection.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%_normalized'"
+        )).scalars().all()
+    assert set(indexes) == {"ix_retractions_original_doi_normalized", "ix_retractions_retraction_doi_normalized"}

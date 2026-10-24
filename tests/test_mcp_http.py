@@ -3,6 +3,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.testclient import TestClient
 
 import mcp_server.server as server
+from app.schemas import ReadinessResponse
+from mcp_server.api_client import RetractionAPIError
 from mcp_server.config import MCPSettings
 
 
@@ -61,7 +63,7 @@ def test_tools_list_over_http(http_client):
 
     assert resp.status_code == 200
     tools = resp.json()["result"]["tools"]
-    assert len(tools) == 20
+    assert len(tools) == 21
     assert "get_article" in {tool["name"] for tool in tools}
     assert "batch_check_citations" in {tool["name"] for tool in tools}
     assert "search_investigation_notes" in {tool["name"] for tool in tools}
@@ -87,3 +89,17 @@ def test_default_http_settings(monkeypatch):
     assert settings.server_port == 8000
     assert settings.mcp_transport == "stdio"
     assert settings.allowed_hosts == []
+
+
+def test_mcp_readiness_checks_upstream(http_client, monkeypatch):
+    async def ready():
+        return ReadinessResponse(status="ok", database="ok")
+
+    monkeypatch.setattr(server.api_client, "readiness", ready)
+    assert http_client.get("/ready").status_code == 200
+
+    async def unavailable():
+        raise RetractionAPIError("API unavailable")
+
+    monkeypatch.setattr(server.api_client, "readiness", unavailable)
+    assert http_client.get("/ready").status_code == 503

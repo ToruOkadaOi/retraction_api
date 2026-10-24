@@ -1,6 +1,6 @@
 [project]
 name = "retraction-watch-api"
-version = "0.2.0"
+version = "0.2.1"
 description = "REST API for Retraction Watch database"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,7 @@ retraction-watch-mcp = "mcp_server.server:main"
 dev = [
     "ruff>=0.1.0",
     "pytest>=7.4.0",
+    "setuptools>=61.0",
 ]
 
 [build-system]

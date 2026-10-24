@@ -1,7 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.validation import MAX_BATCH_IDENTIFIERS, BatchDOIs, BatchPMIDs
 
 T = TypeVar("T")
 
@@ -66,8 +68,14 @@ class CountryStatistic(BaseModel):
 
 
 class BatchLookupRequest(BaseModel):
-    dois: list[str] = Field(default_factory=list)
-    pubmed_ids: list[int] = Field(default_factory=list)
+    dois: BatchDOIs = Field(default_factory=list)
+    pubmed_ids: BatchPMIDs = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def limit_total_identifiers(self):
+        if len(self.dois) + len(self.pubmed_ids) > MAX_BATCH_IDENTIFIERS:
+            raise ValueError(f"At most {MAX_BATCH_IDENTIFIERS} identifiers may be submitted per batch")
+        return self
 
 
 class BatchRetractionItem(BaseModel):
@@ -143,6 +151,10 @@ class RetractionClusterItem(BaseModel):
     retraction_count: int
     top_reasons: list[str]
     sample_record_ids: list[int]
+    baseline_yearly_counts: dict[str, int] = Field(default_factory=dict)
+    baseline_average: float = 0.0
+    ratio_to_baseline: float | None = None
+    is_partial_year: bool = False
 
 
 class AuthorRetractionSummary(BaseModel):
@@ -188,4 +200,21 @@ class DatabaseSummary(BaseModel):
     paywalled_counts: dict[str, int]
     top_reasons: list[ReasonStatistic]
     top_countries: list[CountryStatistic]
+
+
+class DatasetMetadata(BaseModel):
+    source_filename: str
+    source_sha256: str
+    imported_at: datetime
+    record_count: int
+    api_version: str
+
+    model_config = {"from_attributes": True}
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    database: str
+    detail: str | None = None
+    dataset: DatasetMetadata | None = None
 

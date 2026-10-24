@@ -8,15 +8,18 @@ from app.schemas import (
     ArticleDetail,
     ArticleListItem,
     AuthorRetractionSummary,
+    BatchLookupRequest,
     BatchLookupResponse,
     CountryStatistic,
     DatabaseSummary,
+    DatasetMetadata,
     IntegrityDossier,
     InvestigationSearchItem,
     JournalProfile,
     JournalStatistic,
     PaginatedResponse,
     PubPeerEvidence,
+    ReadinessResponse,
     ReasonStatistic,
     RetractionClusterItem,
     RetractionLatencyAnalysis,
@@ -125,6 +128,12 @@ class RetractionAPIClient:
             raise RetractionAPIError("Retraction Watch API returned an invalid response")
         return {"status": data["status"], "database": data["database"]}
 
+    async def get_dataset_metadata(self) -> DatasetMetadata:
+        return self._model(DatasetMetadata, await self._get("/dataset"))
+
+    async def readiness(self) -> ReadinessResponse:
+        return self._model(ReadinessResponse, await self._get("/ready"))
+
     async def list_articles(
         self,
         *,
@@ -188,7 +197,7 @@ class RetractionAPIClient:
     ) -> BatchLookupResponse:
         data = await self._post(
             "/lookup/batch",
-            json={"dois": dois or [], "pubmed_ids": pubmed_ids or []},
+            json=BatchLookupRequest(dois=dois or [], pubmed_ids=pubmed_ids or []).model_dump(),
         )
         return self._model(BatchLookupResponse, data)
 

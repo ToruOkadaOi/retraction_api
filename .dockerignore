@@ -7,3 +7,10 @@ __pycache__/
 tests/
 .dockerignore
 docker-compose.yml
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.DS_Store
+uv.lock

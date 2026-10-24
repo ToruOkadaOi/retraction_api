@@ -1,9 +1,11 @@
 import csv
+import hashlib
 import sqlite3
+from datetime import date
 
 import pytest
 
-from scripts.ingest_csv import ingest
+from scripts.ingest_csv import ingest, parse_date
 from scripts.validate_csv import REQUIRED_COLUMNS
 
 
@@ -89,3 +91,64 @@ def test_ingest_keeps_live_database_when_index_validation_fails(tmp_path, monkey
         ingest(csv_path, sqlite_url(database_path))
     assert database_path.read_bytes() == original
     assert list(tmp_path.glob(".retraction_watch.db.*.tmp*")) == []
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ("", None), ("   ", None),
+    ("6/24/1756 12:00:00 AM", date(1756, 6, 24)),
+    ("1/1/1753 12:00:00 AM", date(1753, 1, 1)),
+    ("6/24/2020 23:30", date(2020, 6, 24)),
+    ("6/24/2020 23:30:59", date(2020, 6, 24)),
+    ("6/24/2020", date(2020, 6, 24)),
+    ("2020-06-24", date(2020, 6, 24)),
+])
+def test_supported_date_formats(value, expected):
+    assert parse_date(value) == expected
+
+
+def test_invalid_populated_date_does_not_replace_database(tmp_path):
+    source = tmp_path / "source.csv"
+    database = tmp_path / "live.db"
+    database.write_bytes(b"previous valid database")
+    row = source_row()
+    row["OriginalPaperDate"] = "2/30/2020"
+    write_source_csv(source, [row])
+    with pytest.raises(ValueError, match="Record ID 1: invalid OriginalPaperDate"):
+        ingest(source, sqlite_url(database))
+    assert database.read_bytes() == b"previous valid database"
+    assert list(tmp_path.glob(".*.tmp*")) == []
+
+
+def test_ingestion_records_verifiable_dataset_metadata(tmp_path):
+    source = tmp_path / "source.csv"
+    database = tmp_path / "live.db"
+    row = source_row()
+    row["RetractionDate"] = "6/24/1756 12:00:00 AM"
+    row["OriginalPaperDate"] = "1/1/1753 12:00:00 AM"
+    write_source_csv(source, [row], encoding="utf-8-sig")
+    ingest(source, sqlite_url(database))
+    with sqlite3.connect(database) as connection:
+        name, digest, imported_at, count, version = connection.execute(
+            "SELECT source_filename, source_sha256, imported_at, record_count, api_version FROM dataset_import"
+        ).fetchone()
+        assert name == "source.csv"
+        assert digest == hashlib.sha256(source.read_bytes()).hexdigest()
+        assert imported_at.endswith("+00:00")
+        assert count == 1
+        assert version == "0.2.1"
+        assert connection.execute("SELECT retraction_date, original_paper_date FROM retractions").fetchone() == (
+            "1756-06-24", "1753-01-01",
+        )
+
+
+def test_changed_source_does_not_publish_metadata_or_database(tmp_path, monkeypatch):
+    import scripts.ingest_csv as importer
+
+    source, database = tmp_path / "source.csv", tmp_path / "live.db"
+    write_source_csv(source, [source_row()])
+    database.write_bytes(b"previous database")
+    digests = iter(["original", "changed"])
+    monkeypatch.setattr(importer, "source_digest", lambda path: next(digests))
+    with pytest.raises(ValueError, match="CSV changed during ingestion"):
+        ingest(source, sqlite_url(database))
+    assert database.read_bytes() == b"previous database"

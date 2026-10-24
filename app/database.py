@@ -1,6 +1,7 @@
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.schema import CreateIndex
 
 from app.config import settings
 
@@ -19,6 +20,19 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def create_tables() -> None:
     Base.metadata.create_all(engine)
+    ensure_lookup_indexes(engine)
+
+
+def ensure_lookup_indexes(bind: Engine) -> None:
+    # create_all does not add new indexes to tables that already exist.
+    from app.models import Retraction
+
+    # SQLite reflection does not reliably report expression indexes. Use DDL's
+    # IF NOT EXISTS rather than an inspector-based checkfirst check.
+    with bind.begin() as connection:
+        for index in Retraction.__table__.indexes:
+            if index.name.endswith("_normalized"):
+                connection.execute(CreateIndex(index, if_not_exists=True))
 
 FTS_TABLE_DDL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS retractions_fts USING fts5(

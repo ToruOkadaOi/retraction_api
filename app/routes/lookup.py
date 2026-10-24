@@ -1,6 +1,8 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.dependencies import get_db
 from app.models import Retraction
@@ -14,18 +16,19 @@ from app.schemas import (
 )
 from app.serializers import build_article_detail, compute_latency_days
 from app.taxonomy import extract_pubpeer_url
+from app.validation import DOIText
 
 router = APIRouter(prefix="/lookup", tags=["lookup"])
 
 
 @router.get("/doi/{doi:path}")
-def lookup_by_doi(doi: str, db: Session = Depends(get_db)) -> ArticleDetail:
+def lookup_by_doi(doi: DOIText, db: Session = Depends(get_db)) -> ArticleDetail:
     clean_doi = doi.strip().lower()
     r = (
         db.query(Retraction)
         .filter(
-            (func.lower(Retraction.retraction_doi) == clean_doi)
-            | (func.lower(Retraction.original_paper_doi) == clean_doi)
+            (func.lower(func.trim(Retraction.retraction_doi)) == clean_doi)
+            | (func.lower(func.trim(Retraction.original_paper_doi)) == clean_doi)
         )
         .first()
     )
@@ -69,16 +72,17 @@ def batch_lookup(
         lower_dois = list(doi_lookup_map.keys())
         doi_records = (
             db.query(Retraction)
+            .options(selectinload(Retraction.reasons))
             .filter(
-                (func.lower(Retraction.retraction_doi).in_(lower_dois))
-                | (func.lower(Retraction.original_paper_doi).in_(lower_dois))
+                (func.lower(func.trim(Retraction.retraction_doi)).in_(lower_dois))
+                | (func.lower(func.trim(Retraction.original_paper_doi)).in_(lower_dois))
             )
             .all()
         )
         for r in doi_records:
             matches = []
-            orig_lower = r.original_paper_doi.lower() if r.original_paper_doi else None
-            ret_lower = r.retraction_doi.lower() if r.retraction_doi else None
+            orig_lower = r.original_paper_doi.strip().lower() if r.original_paper_doi else None
+            ret_lower = r.retraction_doi.strip().lower() if r.retraction_doi else None
             if orig_lower in doi_lookup_map:
                 orig_input = doi_lookup_map[orig_lower]
                 matches.append(f"original_paper_doi: {orig_input}")
@@ -96,6 +100,7 @@ def batch_lookup(
     if clean_pmids:
         pmid_records = (
             db.query(Retraction)
+            .options(selectinload(Retraction.reasons))
             .filter(
                 (Retraction.retraction_pubmed_id.in_(clean_pmids))
                 | (Retraction.original_paper_pubmed_id.in_(clean_pmids))
@@ -158,7 +163,7 @@ def batch_lookup(
 @router.get("/pubpeer")
 def get_pubpeer_evidence(
     record_id: int | None = Query(None),
-    doi: str | None = Query(None),
+    doi: Annotated[DOIText | None, Query()] = None,
     db: Session = Depends(get_db),
 ) -> PubPeerEvidence:
     if not record_id and not doi:
@@ -173,8 +178,8 @@ def get_pubpeer_evidence(
     else:
         clean_doi = doi.strip().lower()
         article = query.filter(
-            (func.lower(Retraction.retraction_doi) == clean_doi)
-            | (func.lower(Retraction.original_paper_doi) == clean_doi)
+            (func.lower(func.trim(Retraction.retraction_doi)) == clean_doi)
+            | (func.lower(func.trim(Retraction.original_paper_doi)) == clean_doi)
         ).first()
 
     if not article:

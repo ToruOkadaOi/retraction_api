@@ -37,6 +37,8 @@ ARTICLE_DETAIL = {
 
 def api_response(request: httpx.Request) -> httpx.Response:
     path = request.url.path
+    if path == "/dataset":
+        return httpx.Response(200, json={"source_filename": "retraction_watch.csv", "source_sha256": "a" * 64, "imported_at": "2026-10-24T12:00:00Z", "record_count": 1, "api_version": "0.2.1"})
     if path == "/health":
         return httpx.Response(200, json={"status": "ok", "database": "ok"})
     if path == "/articles":

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -8,7 +8,8 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from mcp_server.api_client import RetractionAPIClient
+from app.validation import BatchDOIs, BatchPMIDs, DOIText, FilterText, NameText, SearchText
+from mcp_server.api_client import RetractionAPIClient, RetractionAPIError
 from mcp_server.config import settings
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,16 @@ async def http_health_check(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@mcp.custom_route("/ready", methods=["GET"])
+async def http_readiness(_request: Request) -> JSONResponse:
+    """Readiness includes the upstream API's dataset and search index."""
+    try:
+        result = await api_client.readiness()
+    except RetractionAPIError:
+        return JSONResponse({"status": "error", "detail": "Upstream API is not ready"}, status_code=503)
+    return JSONResponse(result.model_dump(mode="json"), status_code=200 if result.status == "ok" else 503)
+
+
 def _dump(value: Any) -> Any:
     if isinstance(value, list):
         return [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value]
@@ -66,20 +77,32 @@ async def health_check() -> dict[str, str]:
 
 
 @mcp.tool()
+async def get_dataset_info() -> dict[str, Any]:
+    """Get the served dataset's source filename, SHA-256 snapshot identifier, import time, row count, and importer API version."""
+    return _dump(await api_client.get_dataset_metadata())
+
+
+@mcp.resource("retraction://dataset")
+async def resource_dataset_info() -> str:
+    """Provenance of the dataset currently served by the API."""
+    return json.dumps(_dump(await api_client.get_dataset_metadata()), indent=2)
+
+
+@mcp.tool()
 async def list_articles(
     skip: Skip = 0,
     limit: PageLimit = 20,
-    journal: str | None = None,
-    publisher: str | None = None,
-    retraction_nature: str | None = None,
+    journal: FilterText | None = None,
+    publisher: FilterText | None = None,
+    retraction_nature: FilterText | None = None,
     year: Annotated[int | None, Field(ge=1000, le=9999, description="Retraction year")] = None,
     from_year: Annotated[int | None, Field(ge=1000, le=9999, description="Start retraction year")] = None,
     to_year: Annotated[int | None, Field(ge=1000, le=9999, description="End retraction year")] = None,
-    reason: Annotated[str | None, Field(description="Filter by retraction reason keyword")] = None,
-    country: Annotated[str | None, Field(description="Filter by author country")] = None,
-    subject: Annotated[str | None, Field(description="Filter by subject discipline")] = None,
-    institution: Annotated[str | None, Field(description="Filter by author institution")] = None,
-    paywalled: Annotated[str | None, Field(description="'Yes', 'No', or 'Unknown'")] = None,
+    reason: Annotated[FilterText | None, Field(description="Filter by retraction reason keyword")] = None,
+    country: Annotated[FilterText | None, Field(description="Filter by author country")] = None,
+    subject: Annotated[FilterText | None, Field(description="Filter by subject discipline")] = None,
+    institution: Annotated[FilterText | None, Field(description="Filter by author institution")] = None,
+    paywalled: Annotated[FilterText | None, Field(description="'Yes', 'No', or 'Unknown'")] = None,
     has_pubpeer: Annotated[bool | None, Field(description="Filter for articles with (or without) PubPeer discussion threads")] = None,
 ) -> dict[str, Any]:
     """List article summaries with rich multi-facet filters and pagination."""
@@ -110,7 +133,7 @@ async def get_article(record_id: Annotated[int, Field(gt=0)]) -> dict[str, Any]:
 
 @mcp.tool()
 async def lookup_article_by_doi(
-    doi: Annotated[str, Field(min_length=1, description="Publication or retraction DOI")],
+    doi: DOIText,
 ) -> dict[str, Any]:
     """Get full article details by DOI. Matches either the original paper DOI or the retraction notice DOI."""
     return _dump(await api_client.lookup_by_doi(doi))
@@ -126,10 +149,10 @@ async def lookup_article_by_pubmed(
 
 @mcp.tool()
 async def batch_check_citations(
-    dois: list[str] = [],
-    pubmed_ids: list[int] = [],
+    dois: BatchDOIs | None = None,
+    pubmed_ids: BatchPMIDs | None = None,
 ) -> dict[str, Any]:
-    """Screen a list of DOIs and/or PubMed IDs in a single call.
+    """Screen at most 200 total DOIs and PubMed IDs per call (including duplicates). Split larger lists into batches.
 
     Returns matching notice records and counts by notice type, plus identifiers not found.
     Retractions, corrections, expressions of concern, and reinstatements remain distinct.
@@ -141,7 +164,7 @@ async def batch_check_citations(
 
 @mcp.tool()
 async def search_articles(
-    query: Annotated[str, Field(min_length=1)],
+    query: SearchText,
     skip: Skip = 0,
     limit: PageLimit = 20,
 ) -> dict[str, Any]:
@@ -157,7 +180,7 @@ async def search_articles(
 
 @mcp.tool()
 async def search_investigation_notes(
-    query: Annotated[str, Field(min_length=1, description="Keywords to search in notes, institutional findings, reasons, and title")],
+    query: SearchText,
     skip: Skip = 0,
     limit: PageLimit = 20,
 ) -> dict[str, Any]:
@@ -168,7 +191,7 @@ async def search_investigation_notes(
 @mcp.tool()
 async def get_pubpeer_evidence(
     record_id: Annotated[int | None, Field(description="Retraction Watch record ID")] = None,
-    doi: Annotated[str | None, Field(description="Article DOI")] = None,
+    doi: DOIText | None = None,
 ) -> dict[str, Any]:
     """Retrieve a PubPeer publication or search link from an article record. A search link does not establish that a discussion thread exists."""
     return _dump(await api_client.get_pubpeer_evidence(record_id=record_id, doi=doi))
@@ -182,7 +205,7 @@ async def get_misconduct_taxonomy() -> list[dict[str, Any]]:
 
 @mcp.tool()
 async def search_by_misconduct_concept(
-    concept: Annotated[str, Field(description="Concept: image_manipulation, fake_peer_review, paper_mill, data_fabrication, plagiarism, author_dispute, ethics_and_consent, honest_error")],
+    concept: FilterText,
     skip: Skip = 0,
     limit: PageLimit = 20,
 ) -> dict[str, Any]:
@@ -193,7 +216,7 @@ async def search_by_misconduct_concept(
 
 @mcp.tool()
 async def search_author_retractions(
-    author_name: Annotated[str, Field(min_length=2, description="Author name to search")],
+    author_name: NameText,
     skip: Skip = 0,
     limit: PageLimit = 20,
 ) -> dict[str, Any]:
@@ -203,8 +226,8 @@ async def search_author_retractions(
 
 @mcp.tool()
 async def generate_integrity_dossier(
-    target_type: Annotated[str, Field(description="Must be 'author' or 'institution'")],
-    target_name: Annotated[str, Field(min_length=2, description="Name of the author or institution")],
+    target_type: Literal["author", "institution"],
+    target_name: NameText,
 ) -> dict[str, Any]:
     """Generate a notice-record dossier with counts by notice type, retraction-only dates, and narrative notes. Name matches may include different people."""
     return _dump(await api_client.generate_dossier(target_type=target_type, target_name=target_name))
@@ -212,8 +235,8 @@ async def generate_integrity_dossier(
 
 @mcp.tool()
 async def analyze_retraction_timeline(
-    journal: Annotated[str | None, Field(description="Optional journal filter")] = None,
-    subject: Annotated[str | None, Field(description="Optional subject discipline filter")] = None,
+    journal: Annotated[FilterText | None, Field(description="Optional journal filter")] = None,
+    subject: Annotated[FilterText | None, Field(description="Optional subject discipline filter")] = None,
 ) -> dict[str, Any]:
     """Analyze time-to-retraction latency, average/median delay, bracket distributions, and outliers."""
     return _dump(await api_client.analyze_retraction_latency(journal=journal, subject=subject))
@@ -224,13 +247,13 @@ async def detect_retraction_clusters(
     min_count: Annotated[int, Field(ge=1, le=500, description="Minimum retractions in a journal-year cluster")] = 10,
     year: Annotated[int | None, Field(ge=1000, le=9999, description="Optional retraction year filter")] = None,
 ) -> list[dict[str, Any]]:
-    """Detect statistical surges in retractions by journal and year (identifying paper mill episodes or compromised special issues)."""
+    """List high-volume journal/year groups with full-group top reasons and the preceding three calendar years of recorded retractions. Ratios are descriptive comparisons, not tests of statistical significance or evidence of paper mills; the current year is partial."""
     return _dump(await api_client.detect_retraction_clusters(min_count=min_count, year=year))
 
 
 @mcp.tool()
 async def get_journal_profile(
-    journal: Annotated[str, Field(min_length=1, description="Journal name")],
+    journal: FilterText,
 ) -> dict[str, Any]:
     """Get a journal's notice counts by type, with annual trend, reasons, and latency for retraction notices only."""
     return _dump(await api_client.get_journal_profile(journal))
@@ -295,7 +318,7 @@ async def resource_top_countries() -> str:
 
 @mcp.resource("retraction://stats/clusters")
 async def resource_retraction_clusters() -> str:
-    """Active journal-year retraction clusters (potential paper mill or special issue surges)."""
+    """High-volume journal-year groups with descriptive historical comparisons."""
     data = await api_client.detect_retraction_clusters(min_count=10)
     return json.dumps(_dump(data), indent=2)
 
@@ -365,7 +388,7 @@ def journal_reliability_audit(journal_name: str) -> str:
         f"Perform an integrity and reliability audit on the journal '{journal_name}'.\n"
         "1. Call `get_journal_profile` to review total retractions, annual trajectories, and top reasons.\n"
         "2. Call `analyze_retraction_timeline` with the journal name to inspect time-to-retraction velocity.\n"
-        "3. Call `detect_retraction_clusters` to check if this journal has any sudden volume spikes.\n"
+        "3. Call `detect_retraction_clusters` to compare journal-year counts with the preceding three calendar years; note partial years and avoid treating count ratios as statistical significance.\n"
         "4. Summarize whether retractions appear to be rigorous post-publication self-policing or systemic vulnerability."
     )
 
@@ -376,7 +399,7 @@ def paper_mill_investigation(target: str = "") -> str:
     target_clause = f" focusing on '{target}'" if target else ""
     return (
         f"Investigate high-volume retraction clusters and coordinated paper-mill activity{target_clause}.\n"
-        "1. Call `detect_retraction_clusters` to identify journals and years with large retraction spikes.\n"
+        "1. Call `detect_retraction_clusters` to identify high-volume journal/year groups and compare historical counts. A high count alone does not establish coordinated fraud.\n"
         "2. Call `list_articles` filtering by reasons such as 'Paper Mill', 'Fake Peer Review', or 'Unreliable Data'.\n"
         "3. Synthesize the findings, identifying affected publishers, journals, and common patterns."
     )

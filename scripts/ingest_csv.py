@@ -1,11 +1,12 @@
 """Atomically load retraction_watch.csv into a SQLite database."""
 
 import csv
+import hashlib
 import os
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, text
@@ -16,7 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
 from app.database import Base, check_fts_integrity, ensure_fts
-from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
+from app.models import (
+    DatasetImport,
+    Retraction,
+    RetractionCountry,
+    RetractionReason,
+    RetractionSubject,
+)
 from scripts.validate_csv import validate_csv
 
 BATCH_SIZE = 500
@@ -32,13 +39,25 @@ class IngestionResult:
     database_path: Path
 
 
-def parse_date(value: str) -> date | None:
+def parse_date(value: str, *, field: str = "date", record_id: str = "unknown") -> date | None:
+    value = value.strip()
     if not value:
         return None
-    try:
-        return datetime.strptime(value, "%m/%d/%Y %H:%M").date()
-    except ValueError:
-        return None
+    for pattern in ("%m/%d/%Y %H:%M", "%m/%d/%Y %I:%M:%S %p",
+                    "%m/%d/%Y %H:%M:%S", "%m/%d/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, pattern).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Record ID {record_id}: invalid {field} value {value!r}")
+
+
+def source_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def parse_int(value: str) -> int | None:
@@ -51,7 +70,8 @@ def parse_int(value: str) -> int | None:
 
 
 def clean_doi(value: str) -> str | None:
-    if not value or value == "unavailable":
+    value = value.strip()
+    if not value or value.lower() == "unavailable":
         return None
     return value
 
@@ -86,8 +106,8 @@ def _build_retraction(row: dict[str, str]) -> Retraction:
         urls=row["URLS"] or None,
         authors_raw=row["Author"] or None,
         notes=row["Notes"] or None,
-        retraction_date=parse_date(row["RetractionDate"]),
-        original_paper_date=parse_date(row["OriginalPaperDate"]),
+        retraction_date=parse_date(row["RetractionDate"], field="RetractionDate", record_id=row["Record ID"]),
+        original_paper_date=parse_date(row["OriginalPaperDate"], field="OriginalPaperDate", record_id=row["Record ID"]),
         retraction_doi=clean_doi(row["RetractionDOI"]),
         retraction_pubmed_id=parse_int(row["RetractionPubMedID"]),
         original_paper_doi=clean_doi(row["OriginalPaperDOI"]),
@@ -151,6 +171,7 @@ def ingest(
     if not source_path.exists():
         raise FileNotFoundError(f"CSV not found at {source_path}")
 
+    source_sha256 = source_digest(source_path)
     expected_rows = validate_csv(source_path)
     live_path, temporary_path, temporary_url = _sqlite_target(
         database_url or settings.database_url
@@ -186,6 +207,15 @@ def ingest(
                 if batch:
                     session.add_all(batch)
                     session.commit()
+
+            if source_digest(source_path) != source_sha256:
+                raise ValueError("CSV changed during ingestion; refusing to publish an inconsistent snapshot")
+            session.add(DatasetImport(
+                id=1, source_filename=source_path.name, source_sha256=source_sha256,
+                imported_at=datetime.now(timezone.utc).isoformat(),
+                record_count=row_count, api_version=settings.api_version,
+            ))
+            session.commit()
 
             ensure_fts(engine, rebuild=True)
             countries, reasons, subjects = _validate_database(engine, expected_rows)

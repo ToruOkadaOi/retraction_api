@@ -2,14 +2,12 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    "fastapi>=0.109.0" \
-    "uvicorn[standard]>=0.27.0" \
-    "sqlalchemy>=2.0.0" \
-    "pydantic>=2.5.0" \
-    "pydantic-settings>=2.0.0"
+COPY requirements.lock ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
-COPY . .
+COPY app ./app
+COPY scripts ./scripts
+COPY retraction_watch.csv ./
 
 RUN mkdir -p data && \
     CSV_PATH=retraction_watch.csv \

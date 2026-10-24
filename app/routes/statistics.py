@@ -1,13 +1,15 @@
-import statistics
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import Integer, and_, case, cast, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.dependencies import get_db
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
-from app.notices import count_notice_types, is_retraction, notice_type, retraction_filter
+from app.notices import notice_type, retraction_filter
+from app.queries import notice_counts, reason_counts
 from app.schemas import (
     BatchRetractionItem,
     CountryStatistic,
@@ -20,6 +22,7 @@ from app.schemas import (
     RetractionLatencyAnalysis,
 )
 from app.serializers import compute_latency_days
+from app.validation import FilterText
 
 router = APIRouter(prefix="/stats", tags=["statistics"])
 
@@ -122,49 +125,26 @@ def get_database_summary(db: Session = Depends(get_db)) -> DatabaseSummary:
 
 
 @router.get("/journal/{journal:path}")
-def get_journal_profile(journal: str, db: Session = Depends(get_db)) -> JournalProfile:
-    clean_journal = journal.strip().lower()
-    records = (
-        db.query(Retraction)
-        .filter(func.lower(Retraction.journal) == clean_journal)
-        .all()
-    )
-    if not records:
+def get_journal_profile(journal: FilterText, db: Session = Depends(get_db)) -> JournalProfile:
+    journal_filter = func.lower(Retraction.journal) == journal.strip().lower()
+    counts = notice_counts(db, journal_filter)
+    if not counts:
         raise HTTPException(status_code=404, detail="Journal not found")
-
-    counts_by_nature = count_notice_types(r.retraction_nature for r in records)
-    retracted = [r for r in records if is_retraction(r.retraction_nature)]
-    canonical_name = records[0].journal
-
-    latencies = [
-        (r.retraction_date - r.original_paper_date).days
-        for r in retracted
-        if r.retraction_date and r.original_paper_date and r.retraction_date >= r.original_paper_date
-    ]
-    avg_latency = round(statistics.mean(latencies), 1) if latencies else None
-
-    reason_counts = Counter()
-    for r in retracted:
-        for reason in r.reasons:
-            reason_counts[reason.reason] += 1
-    top_reasons_list = [
-        ReasonStatistic(reason=reason, count=count)
-        for reason, count in reason_counts.most_common(10)
-    ]
-
-    yearly_counts_raw = Counter(
-        str(r.retraction_date.year) for r in retracted if r.retraction_date
-    )
-    yearly_counts = dict(sorted(yearly_counts_raw.items()))
-
+    canonical_name = db.query(Retraction.journal).filter(journal_filter).order_by(
+        Retraction.record_id
+    ).first()[0]
+    days = func.julianday(Retraction.retraction_date) - func.julianday(Retraction.original_paper_date)
+    avg = db.query(func.avg(days)).filter(journal_filter, retraction_filter(), days >= 0).scalar()
+    year_col = func.strftime("%Y", Retraction.retraction_date)
+    yearly = db.query(year_col, func.count(Retraction.record_id)).filter(
+        journal_filter, retraction_filter(), Retraction.retraction_date.isnot(None)
+    ).group_by(year_col).order_by(year_col).all()
     return JournalProfile(
-        journal=canonical_name,
-        total_records=len(records),
-        total_retractions=len(retracted),
-        counts_by_nature=counts_by_nature,
-        average_latency_days=avg_latency,
-        top_reasons=top_reasons_list,
-        yearly_counts=yearly_counts,
+        journal=canonical_name, total_records=sum(counts.values()),
+        total_retractions=counts.get("Retraction", 0), counts_by_nature=counts,
+        average_latency_days=round(avg, 1) if avg is not None else None,
+        top_reasons=reason_counts(db, journal_filter, retraction_filter(), limit=10),
+        yearly_counts=dict(yearly),
     )
 
 
@@ -188,148 +168,110 @@ def _to_batch_item(r: Retraction) -> BatchRetractionItem:
 
 @router.get("/latency")
 def analyze_retraction_latency(
-    journal: str | None = Query(None),
-    subject: str | None = Query(None),
+    journal: Annotated[FilterText | None, Query()] = None,
+    subject: Annotated[FilterText | None, Query()] = None,
     db: Session = Depends(get_db),
 ) -> RetractionLatencyAnalysis:
-    query = db.query(Retraction).filter(
-        retraction_filter(),
-        Retraction.retraction_date.isnot(None),
-        Retraction.original_paper_date.isnot(None),
-    )
+    days = cast(func.julianday(Retraction.retraction_date) - func.julianday(Retraction.original_paper_date), Integer)
+    query = db.query(Retraction).filter(retraction_filter(), days >= 0)
     if journal:
         query = query.filter(func.lower(Retraction.journal) == journal.strip().lower())
     if subject:
-        query = query.filter(
-            Retraction.subjects.any(
-                func.lower(RetractionSubject.subject).contains(subject.strip().lower())
-            )
-        )
-
-    records = query.all()
-    if not records:
+        query = query.filter(Retraction.subjects.any(
+            func.lower(RetractionSubject.subject).contains(subject.strip().lower(), autoescape=True)
+        ))
+    total, average = query.with_entities(func.count(Retraction.record_id), func.avg(days)).one()
+    if not total:
         return RetractionLatencyAnalysis(
-            total_records_analyzed=0,
-            average_latency_days=0.0,
-            median_latency_days=0.0,
-            fastest_retractions=[],
-            slowest_retractions=[],
-            distribution=[],
+            total_records_analyzed=0, average_latency_days=0.0, median_latency_days=0.0,
+            fastest_retractions=[], slowest_retractions=[], distribution=[],
         )
-
-    scored = []
-    for r in records:
-        days = (r.retraction_date - r.original_paper_date).days
-        if days >= 0:
-            scored.append((days, r))
-
-    if not scored:
-        return RetractionLatencyAnalysis(
-            total_records_analyzed=0,
-            average_latency_days=0.0,
-            median_latency_days=0.0,
-            fastest_retractions=[],
-            slowest_retractions=[],
-            distribution=[],
-        )
-
-    scored.sort(key=lambda item: item[0])
-    days_list = [days for days, _ in scored]
-    avg_latency = round(statistics.mean(days_list), 1)
-    median_latency = round(float(statistics.median(days_list)), 1)
-
-    bracket_counts = {
-        "< 1 year": 0,
-        "1-3 years": 0,
-        "3-5 years": 0,
-        "> 5 years": 0,
-    }
-    for days in days_list:
-        if days < 365:
-            bracket_counts["< 1 year"] += 1
-        elif days < 1095:
-            bracket_counts["1-3 years"] += 1
-        elif days < 1825:
-            bracket_counts["3-5 years"] += 1
-        else:
-            bracket_counts["> 5 years"] += 1
-
-    total_scored = len(scored)
-    distribution = [
-        LatencyDistributionBracket(
-            bracket=bracket,
-            count=count,
-            percentage=round((count / total_scored) * 100, 1),
-        )
-        for bracket, count in bracket_counts.items()
-    ]
-
-    fastest = [_to_batch_item(r) for _, r in scored[:5]]
-    slowest = [_to_batch_item(r) for _, r in scored[-5:][::-1]]
-
+    middle = query.with_entities(days).order_by(days).offset((total - 1) // 2).limit(
+        2 if total % 2 == 0 else 1
+    ).all()
+    median = sum(row[0] for row in middle) / len(middle)
+    bracket = case(
+        (days < 365, "< 1 year"), (days < 1095, "1-3 years"),
+        (days < 1825, "3-5 years"), else_="> 5 years",
+    )
+    counts = dict(query.with_entities(bracket, func.count(Retraction.record_id)).group_by(bracket).all())
+    distribution = [LatencyDistributionBracket(
+        bracket=label, count=counts.get(label, 0), percentage=round(counts.get(label, 0) / total * 100, 1)
+    ) for label in ["< 1 year", "1-3 years", "3-5 years", "> 5 years"]]
+    extremes = query.options(selectinload(Retraction.reasons))
+    fastest = extremes.order_by(days, Retraction.record_id).limit(5).all()
+    slowest = extremes.order_by(days.desc(), Retraction.record_id).limit(5).all()
     return RetractionLatencyAnalysis(
-        total_records_analyzed=total_scored,
-        average_latency_days=avg_latency,
-        median_latency_days=median_latency,
-        fastest_retractions=fastest,
-        slowest_retractions=slowest,
-        distribution=distribution,
+        total_records_analyzed=total, average_latency_days=round(average, 1),
+        median_latency_days=round(median, 1),
+        fastest_retractions=[_to_batch_item(r) for r in fastest],
+        slowest_retractions=[_to_batch_item(r) for r in slowest], distribution=distribution,
     )
 
 
 @router.get("/clusters")
 def detect_retraction_clusters(
     min_count: int = Query(10, ge=1, le=500),
-    year: int | None = Query(None),
+    year: int | None = Query(None, ge=1000, le=9999),
     db: Session = Depends(get_db),
 ) -> list[RetractionClusterItem]:
     year_col = func.strftime("%Y", Retraction.retraction_date)
-    query = (
-        db.query(
-            Retraction.journal,
-            year_col.label("year"),
-            func.count(Retraction.record_id).label("count"),
-        )
-        .filter(Retraction.journal != "", Retraction.retraction_date.isnot(None), retraction_filter())
+    count = func.count(Retraction.record_id)
+    query = db.query(Retraction.journal.label("journal"), year_col.label("year"), count.label("count")).filter(
+        Retraction.journal != "", Retraction.retraction_date.isnot(None), retraction_filter()
     )
     if year:
-        query = query.filter(year_col == str(year))
-
-    cluster_rows = (
-        query.group_by(Retraction.journal, year_col)
-        .having(func.count(Retraction.record_id) >= min_count)
-        .order_by(func.count(Retraction.record_id).desc())
-        .limit(50)
-        .all()
-    )
-
-    clusters: list[RetractionClusterItem] = []
-    for journal_name, cluster_year, count in cluster_rows:
-        records = (
-            db.query(Retraction)
-            .filter(
-                retraction_filter(),
-                Retraction.journal == journal_name,
-                func.strftime("%Y", Retraction.retraction_date) == cluster_year,
-            )
-            .limit(100)
-            .all()
-        )
-        reason_counts = Counter(
-            reason.reason for r in records for reason in r.reasons
-        )
-        top_reasons_for_cluster = [r for r, _ in reason_counts.most_common(3)]
-        sample_ids = [r.record_id for r in records[:5]]
-
-        clusters.append(
-            RetractionClusterItem(
-                journal=journal_name,
-                year=int(cluster_year),
-                retraction_count=count,
-                top_reasons=top_reasons_for_cluster,
-                sample_record_ids=sample_ids,
-            )
-        )
-
-    return clusters
-
+        query = query.filter(Retraction.retraction_date >= date(year, 1, 1))
+        if year < 9999:
+            query = query.filter(Retraction.retraction_date < date(year + 1, 1, 1))
+    selected = query.group_by(Retraction.journal, year_col).having(count >= min_count).order_by(
+        count.desc(), Retraction.journal, year_col
+    ).limit(50).subquery()
+    clusters = db.execute(select(selected)).all()
+    if not clusters:
+        return []
+    membership = and_(Retraction.journal == selected.c.journal, year_col == selected.c.year)
+    # Rank reasons across every record in each selected group, not a sample.
+    reason_count = func.count(RetractionReason.id)
+    ranked_reasons = db.query(
+        Retraction.journal.label("journal"), year_col.label("year"), RetractionReason.reason,
+        func.row_number().over(partition_by=(Retraction.journal, year_col),
+                               order_by=(reason_count.desc(), RetractionReason.reason)).label("position"),
+    ).join(RetractionReason).join(selected, membership).filter(retraction_filter()).group_by(
+        Retraction.journal, year_col, RetractionReason.reason
+    ).subquery()
+    reasons = defaultdict(list)
+    for row in db.execute(select(ranked_reasons).where(ranked_reasons.c.position <= 3).order_by(
+        ranked_reasons.c.journal, ranked_reasons.c.year, ranked_reasons.c.position
+    )):
+        reasons[row.journal, row.year].append(row.reason)
+    ranked_samples = db.query(
+        Retraction.journal.label("journal"), year_col.label("year"), Retraction.record_id,
+        func.row_number().over(partition_by=(Retraction.journal, year_col),
+                               order_by=Retraction.record_id).label("position"),
+    ).join(selected, membership).filter(retraction_filter()).subquery()
+    samples = defaultdict(list)
+    for row in db.execute(select(ranked_samples).where(ranked_samples.c.position <= 5).order_by(
+        ranked_samples.c.journal, ranked_samples.c.year, ranked_samples.c.position
+    )):
+        samples[row.journal, row.year].append(row.record_id)
+    years = [int(row.year) for row in clusters]
+    baseline_rows = db.query(Retraction.journal, year_col, count).filter(
+        retraction_filter(), Retraction.journal.in_({row.journal for row in clusters}),
+        year_col >= f"{min(years) - 3:04d}", year_col <= f"{max(years) - 1:04d}",
+    ).group_by(Retraction.journal, year_col).all()
+    historical = {(journal, y): n for journal, y, n in baseline_rows}
+    result = []
+    for row in clusters:
+        cluster_year = int(row.year)
+        baseline = {str(y): historical.get((row.journal, f"{y:04d}"), 0)
+                    for y in range(cluster_year - 3, cluster_year)}
+        mean = sum(baseline.values()) / 3
+        result.append(RetractionClusterItem(
+            journal=row.journal, year=cluster_year, retraction_count=row.count,
+            top_reasons=reasons[row.journal, row.year], sample_record_ids=samples[row.journal, row.year],
+            baseline_yearly_counts=baseline, baseline_average=round(mean, 2),
+            ratio_to_baseline=round(row.count / mean, 2) if mean else None,
+            is_partial_year=cluster_year >= date.today().year,
+        ))
+    return result

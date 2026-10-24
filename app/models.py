@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Index, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -34,6 +34,11 @@ class Retraction(Base):
     retraction_pubmed_id: Mapped[int | None] = mapped_column(index=True)
     original_paper_doi: Mapped[str | None] = mapped_column(index=True)
     original_paper_pubmed_id: Mapped[int | None] = mapped_column(index=True)
+
+    __table_args__ = (
+        Index("ix_retractions_original_doi_normalized", func.lower(func.trim(original_paper_doi))),
+        Index("ix_retractions_retraction_doi_normalized", func.lower(func.trim(retraction_doi))),
+    )
 
     # Relationships
     countries: Mapped[list["RetractionCountry"]] = relationship(
@@ -80,3 +85,14 @@ class RetractionSubject(Base):
     retraction: Mapped["Retraction"] = relationship(
         back_populates="subjects"
     )
+
+
+class DatasetImport(Base):
+    __tablename__ = "dataset_import"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_filename: Mapped[str]
+    source_sha256: Mapped[str]
+    imported_at: Mapped[str]
+    record_count: Mapped[int]
+    api_version: Mapped[str]

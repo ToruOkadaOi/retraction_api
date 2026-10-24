@@ -1,3 +1,6 @@
+from datetime import date
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -6,6 +9,7 @@ from app.dependencies import get_db
 from app.models import Retraction, RetractionCountry, RetractionReason, RetractionSubject
 from app.schemas import ArticleDetail, ArticleListItem, PaginatedResponse
 from app.serializers import build_article_detail
+from app.validation import FilterText
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -14,17 +18,17 @@ router = APIRouter(prefix="/articles", tags=["articles"])
 def list_articles(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    journal: str | None = Query(None),
-    publisher: str | None = Query(None),
-    retraction_nature: str | None = Query(None),
-    year: int | None = Query(None),
-    from_year: int | None = Query(None),
-    to_year: int | None = Query(None),
-    reason: str | None = Query(None),
-    country: str | None = Query(None),
-    subject: str | None = Query(None),
-    institution: str | None = Query(None),
-    paywalled: str | None = Query(None),
+    journal: Annotated[FilterText | None, Query()] = None,
+    publisher: Annotated[FilterText | None, Query()] = None,
+    retraction_nature: Annotated[FilterText | None, Query()] = None,
+    year: int | None = Query(None, ge=1000, le=9999),
+    from_year: int | None = Query(None, ge=1000, le=9999),
+    to_year: int | None = Query(None, ge=1000, le=9999),
+    reason: Annotated[FilterText | None, Query()] = None,
+    country: Annotated[FilterText | None, Query()] = None,
+    subject: Annotated[FilterText | None, Query()] = None,
+    institution: Annotated[FilterText | None, Query()] = None,
+    paywalled: Annotated[FilterText | None, Query()] = None,
     has_pubpeer: bool | None = Query(None, description="Filter for articles with/without PubPeer discussion threads"),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ArticleListItem]:
@@ -35,16 +39,19 @@ def list_articles(
         filters.append(func.lower(Retraction.publisher) == publisher.strip().lower())
     if retraction_nature:
         filters.append(func.lower(Retraction.retraction_nature) == retraction_nature.strip().lower())
-    if year:
-        filters.append(func.strftime("%Y", Retraction.retraction_date) == str(year))
-    if from_year:
-        filters.append(func.strftime("%Y", Retraction.retraction_date) >= str(from_year))
-    if to_year:
-        filters.append(func.strftime("%Y", Retraction.retraction_date) <= str(to_year))
+    if from_year and to_year and from_year > to_year:
+        raise HTTPException(status_code=422, detail="from_year must not exceed to_year")
+    if year and ((from_year and year < from_year) or (to_year and year > to_year)):
+        raise HTTPException(status_code=422, detail="year must be within the requested year range")
+    lower_year, upper_year = year or from_year, year or to_year
+    if lower_year:
+        filters.append(Retraction.retraction_date >= date(lower_year, 1, 1))
+    if upper_year and upper_year < 9999:
+        filters.append(Retraction.retraction_date < date(upper_year + 1, 1, 1))
     if reason:
         filters.append(
             Retraction.reasons.any(
-                func.lower(RetractionReason.reason).contains(reason.strip().lower())
+                func.lower(RetractionReason.reason).contains(reason.strip().lower(), autoescape=True)
             )
         )
     if country:
@@ -56,11 +63,11 @@ def list_articles(
     if subject:
         filters.append(
             Retraction.subjects.any(
-                func.lower(RetractionSubject.subject).contains(subject.strip().lower())
+                func.lower(RetractionSubject.subject).contains(subject.strip().lower(), autoescape=True)
             )
         )
     if institution:
-        filters.append(func.lower(Retraction.institution).contains(institution.strip().lower()))
+        filters.append(func.lower(Retraction.institution).contains(institution.strip().lower(), autoescape=True))
     if paywalled:
         filters.append(func.lower(Retraction.paywalled) == paywalled.strip().lower())
     if has_pubpeer is True:
