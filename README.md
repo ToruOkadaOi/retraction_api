@@ -10,7 +10,7 @@ A REST API and MCP server for searching the [Retraction Watch database](https://
 - Base URL: [retraction-api.onrender.com](https://retraction-api.onrender.com)
 - Health check: [retraction-api.onrender.com/health](https://retraction-api.onrender.com/health)
 
-P.S - A knowledge graph based api can also be accessed [here](https://retraction-watch-data.onrender.com/docs)
+P.S - A knowledge graph based [**dashboard**](https://toruokadaoi.github.io/retraction_watch_data/) ·and its [**API**](https://retraction-watch-data.onrender.com/docs) is also present!
 
 ### MCP server
 
