@@ -6,8 +6,9 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
+from app.homepages import MCP_HOMEPAGE
 from app.validation import BatchDOIs, BatchPMIDs, DOIText, FilterText, NameText, SearchText
 from mcp_server.api_client import RetractionAPIClient, RetractionAPIError
 from mcp_server.config import settings
@@ -44,6 +45,11 @@ api_client = RetractionAPIClient(settings.base_url, settings.api_timeout)
 Skip = Annotated[int, Field(ge=0, description="Number of results to skip")]
 PageLimit = Annotated[int, Field(ge=1, le=100, description="Maximum results to return")]
 StatsLimit = Annotated[int, Field(ge=1, le=100, description="Maximum statistics to return")]
+
+
+@mcp.custom_route("/", methods=["GET"])
+async def http_homepage(_request: Request) -> HTMLResponse:
+    return HTMLResponse(MCP_HOMEPAGE)
 
 
 @mcp.custom_route("/health", methods=["GET"])

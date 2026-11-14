@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from app.config import settings
 from app.database import create_tables, ensure_fts
+from app.homepages import API_HOMEPAGE
 from app.routes import articles, health, lookup, search, statistics
 
 
@@ -28,6 +30,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def homepage() -> HTMLResponse:
+    return HTMLResponse(API_HOMEPAGE)
+
 
 app.include_router(health.router)
 app.include_router(articles.router)
