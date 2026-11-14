@@ -6,16 +6,12 @@ A REST API and MCP server for searching the [Retraction Watch database](https://
 
 ### API
 
-- Interactive documentation: [retraction-api.onrender.com/docs](https://retraction-api.onrender.com/docs)
-- Base URL: [retraction-api.onrender.com](https://retraction-api.onrender.com)
-- Health check: [retraction-api.onrender.com/health](https://retraction-api.onrender.com/health)
-
-P.S - A knowledge graph based [**dashboard**](https://toruokadaoi.github.io/retraction_watch_data/) is also present!
+- [API documentation](https://retraction-api.onrender.com/docs)
+- [Knowledge graph dashboard](https://toruokadaoi.github.io/retraction_watch_data/)
 
 ### MCP server
 
-- Streamable HTTP endpoint: `https://retraction-watch-mcp.onrender.com/mcp`
-- Health check: [retraction-watch-mcp.onrender.com/health](https://retraction-watch-mcp.onrender.com/health)
+- Add to client: `https://retraction-watch-mcp.onrender.com/mcp`
 
 Hosted services may take a moment to wake up after being idle.
 
