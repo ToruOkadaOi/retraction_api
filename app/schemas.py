@@ -1,5 +1,6 @@
 from datetime import date, datetime
-from typing import Generic, TypeVar
+from enum import Enum
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -78,6 +79,18 @@ class BatchLookupRequest(BaseModel):
         return self
 
 
+class IdentifierMatchKind(str, Enum):
+    ORIGINAL_DOI = "original_paper_doi"
+    NOTICE_DOI = "retraction_doi"
+    ORIGINAL_PMID = "original_paper_pmid"
+    NOTICE_PMID = "retraction_pmid"
+
+
+class IdentifierMatch(BaseModel):
+    kind: IdentifierMatchKind
+    identifier: str | int
+
+
 class BatchRetractionItem(BaseModel):
     record_id: int
     title: str
@@ -92,6 +105,7 @@ class BatchRetractionItem(BaseModel):
     original_paper_pubmed_id: int | None = None
     retraction_pubmed_id: int | None = None
     matched_by: str
+    identifier_matches: list[IdentifierMatch] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -119,6 +133,7 @@ class InvestigationSearchItem(ArticleListItem):
 
 
 class BatchLookupResponse(BaseModel):
+    source_sha256: str | None = Field(default=None, description="SHA-256 of the CSV used for these results")
     screened_count: int = Field(description="Unique nonempty DOIs plus unique positive PubMed IDs screened")
     matched_identifier_count: int
     not_found_count: int = Field(description="Screened identifiers with no matching database record; not a safety assessment")
@@ -128,6 +143,10 @@ class BatchLookupResponse(BaseModel):
     records: list[BatchRetractionItem]
     unmatched_dois: list[str]
     unmatched_pubmed_ids: list[int]
+
+
+class NoticeHistoryResponse(BatchLookupResponse):
+    identifier_type: Literal["doi", "pmid"]
 
 
 class LatencyDistributionBracket(BaseModel):

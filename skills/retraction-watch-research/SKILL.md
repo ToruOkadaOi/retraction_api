@@ -17,28 +17,32 @@ If MCP is unavailable and HTTP access is available, use the REST API at `https:/
 |---|---|
 | `get_dataset_info` | `GET /dataset` |
 | `batch_check_citations` | `POST /lookup/batch` with `dois` and `pubmed_ids` arrays |
+| `lookup_notice_history` | `GET /lookup/notices?doi=...` or `GET /lookup/notices?pubmed_id=...` |
+| `search_articles` | `GET /search?q=...` |
+| `search_author_retractions` | `GET /search/author?author=...` |
+| `generate_integrity_dossier` | `GET /search/dossier?target_name=...&target_type=author` (or `institution`) |
 | `get_article` | `GET /articles/{record_id}` |
 
-Retrieve `get_dataset_info` (or `retraction://dataset`) once per screening or research session. Retain the source filename, SHA-256 snapshot identifier, UTC import time, and record count for the report. Import time is not the upstream publication or update time. If metadata is unavailable, disclose that limitation rather than inventing provenance; available notice results can still be reported.
+Use `source_sha256` on each screening response to identify the snapshot that produced it. Retrieve `get_dataset_info` (or `retraction://dataset`) for additional provenance and attach its details only when the hashes match. Retain the source filename, SHA-256 snapshot identifier, UTC import time, and record count for the report. Import time is not the upstream publication or update time. If metadata is unavailable, disclose that limitation rather than inventing provenance; available notice results can still be reported.
 
 Hosted services may take time to wake up. Retry a transient connection failure once; if access still fails, report incomplete screening and retain the unprocessed identifiers. An HTTP error, tool error, or malformed response is not a successful query with no matches. A batch rejected for size can be split to the supported limit and retried.
 
 ## Citation screening
 
-Extract supplied DOIs and positive integer PubMed IDs while keeping a mapping back to each citation. Do not invent identifiers for citations that lack them. When needed, resolve those citations by title with `search_articles`, then inspect `get_article` and verify bibliographic details before treating a candidate as a match.
+Extract supplied DOIs and positive integer PubMed IDs while keeping a mapping back to each citation. Do not invent identifiers for citations that lack them. When needed, resolve those citations by title with `search_articles`, then inspect `get_article` and verify bibliographic details before treating a candidate as a match. Title search covers notice records. An empty title search leaves a citation without identifiers unresolved.
 
 Trim DOI whitespace and remove an explicit DOI URL prefix or `doi:` label when present. Compare DOIs case-insensitively and deduplicate each identifier type. Preserve the submitted citation and first identifier spelling for display. Avoid removing characters that may be part of the DOI.
 
-Call `batch_check_citations` with at most **200 combined DOIs and PubMed IDs per request**. The server applies this limit before deduplication. Use batches for larger lists and keep track of completed and failed batches. A single DOI/PMID lookup can return only one record; prefer batch screening when collecting all matching notices.
+Call `batch_check_citations` with at most **200 combined DOIs and PubMed IDs per request**. The server applies this limit before deduplication. Use batches for larger lists and keep track of completed and failed batches. Use `lookup_notice_history` for a single DOI or PMID and batch screening for multiple identifiers.
 
 Interpret the response as follows:
 
-- `records` contains matching notice records, including their original `retraction_nature` and `matched_by` identifiers. Identifiers can refer to either the original publication or its notice.
+- `records` contains matching notice records, including their original `retraction_nature` and structured `identifier_matches` (kind and identifier). Older responses provide the same match roles in `matched_by`. Identifiers can refer to either the original publication or its notice.
 - `screened_count` counts unique nonempty DOIs plus unique positive PMIDs. `matched_identifier_count` counts identifiers with a match; `not_found_count` counts identifiers without a match.
 - `matched_record_count` counts distinct records, while `retracted_count` counts only records whose notice type is Retraction. `counts_by_nature` separates the notice types.
 - One citation may supply both a DOI and PMID, and one identifier may match several records. Identifier counts, notice counts, and citation counts are different quantities.
 
-Merge successful batches by `record_id` before calculating overall record and notice-type counts: the same record can occur in different batches through different identifiers. Keep identifier results separately and map them back to citations. Report citations without usable identifiers, unresolved candidate matches, and failed batches separately from successfully screened identifiers with no recorded match.
+Compare `source_sha256` across batches before merging. If hashes differ, rerun affected batches or report separate snapshots. Mark missing hashes as unverified provenance and keep those batches separate from verified totals. Within one verified snapshot, merge successful batches by `record_id` before calculating overall record and notice-type counts: the same record can occur in different batches through different identifiers. Keep identifier results separately and map them back to citations. Report citations without usable identifiers, unresolved candidate matches, and failed batches separately from successfully screened identifiers with no recorded match.
 
 ## Notice interpretation and research
 
@@ -54,7 +58,7 @@ Use `get_pubpeer_evidence` when discussion links are relevant. A PubPeer search 
 
 Provide the identifiers or bibliographic details used for each match, record ID, notice type and date, and relevant original-paper/notice DOI or source URL. Fetch `get_article` when summaries lack the detail needed to support a conclusion. A REST record URL such as `https://retraction-api.onrender.com/articles/{record_id}` identifies the served record; use the corresponding base URL for a custom instance. Cite primary notice sources when available, and distinguish reading a source from merely returning its link.
 
-Report unmatched identifiers as **“no matching record in the screened snapshot”**, rather than “clean,” “safe,” or “reliable.” Include scope, unresolved citations or access failures, and dataset provenance. Avoid presenting historical notice counts as a determination of a paper's current status or a person's integrity.
+Group the report into citations with matched notices, screened identifiers with no match, unresolved citations, and failed requests. Report unmatched identifiers as **“no matching record in the screened snapshot”**, rather than “clean,” “safe,” or “reliable.” Include scope, unresolved citations or access failures, and dataset provenance. Avoid presenting historical notice counts as a determination of a paper's current status or a person's integrity.
 
 Credit the [Retraction Watch dataset distributed by Crossref](https://gitlab.com/crossref/retraction-watch-data). Consult the [source field definitions](https://retractionwatch.com/retraction-watch-database-user-guide/retraction-watch-database-user-guide-appendix-a-fields/) when interpreting unfamiliar source fields.
 

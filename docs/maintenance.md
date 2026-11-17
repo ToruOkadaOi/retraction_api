@@ -83,7 +83,7 @@ Environment variables are loaded from `.env`:
 | `DEBUG` | `false` | Enable debug mode |
 | `API_TITLE` | `Retraction Watch API` | OpenAPI title |
 | `API_VERSION` | `0.2.1` | API version string |
-| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:8000` | Comma-separated allowed browser origins |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:8000,https://toruokadaoi.github.io,https://retraction-watch-data.onrender.com` | Comma-separated allowed browser origins |
 | `RETRACTION_API_URL` | `https://retraction-api.onrender.com` | Base URL used by the MCP server |
 | `RETRACTION_API_TIMEOUT` | `10` | MCP-to-API request timeout in seconds |
 | `RETRACTION_MCP_TRANSPORT` | `stdio` | MCP transport: `stdio` or `streamable-http` |
@@ -91,6 +91,8 @@ Environment variables are loaded from `.env`:
 | `RETRACTION_MCP_PORT` | `8000` | MCP HTTP port; hosting platforms may override it with `PORT` |
 | `RETRACTION_MCP_ALLOWED_HOSTS` | empty | Comma-separated HTTP Host allowlist for deployed MCP servers |
 | `RETRACTION_MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser Origin allowlist for deployed MCP servers |
+
+Deployments with an explicit `CORS_ORIGINS` override should include the dashboard's origin to enable its **Compare with API snapshot** control.
 
 For public MCP deployments, set `RETRACTION_MCP_ALLOWED_HOSTS` to the public hostname, such as `retraction-watch-mcp.onrender.com`, to enable DNS rebinding protection.
 

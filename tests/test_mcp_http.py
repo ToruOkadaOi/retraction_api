@@ -63,8 +63,9 @@ def test_tools_list_over_http(http_client):
 
     assert resp.status_code == 200
     tools = resp.json()["result"]["tools"]
-    assert len(tools) == 21
+    assert len(tools) == 22
     assert "get_article" in {tool["name"] for tool in tools}
+    assert "lookup_notice_history" in {tool["name"] for tool in tools}
     assert "batch_check_citations" in {tool["name"] for tool in tools}
     assert "search_investigation_notes" in {tool["name"] for tool in tools}
     assert "get_pubpeer_evidence" in {tool["name"] for tool in tools}

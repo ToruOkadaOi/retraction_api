@@ -17,6 +17,7 @@ from app.schemas import (
     InvestigationSearchItem,
     JournalProfile,
     JournalStatistic,
+    NoticeHistoryResponse,
     PaginatedResponse,
     PubPeerEvidence,
     ReadinessResponse,
@@ -48,6 +49,15 @@ class RetractionAPIClient:
         self.timeout = timeout
         self.transport = transport
 
+    @staticmethod
+    def _not_found(response: httpx.Response) -> RetractionAPINotFoundError:
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        detail = body.get("detail") if isinstance(body, dict) else None
+        return RetractionAPINotFoundError(detail if isinstance(detail, str) else "Resource not found")
+
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
             async with httpx.AsyncClient(
@@ -66,7 +76,7 @@ class RetractionAPIClient:
             ) from exc
 
         if response.status_code == 404:
-            raise RetractionAPINotFoundError("Article not found")
+            raise self._not_found(response)
         if response.is_error:
             raise RetractionAPIError(
                 f"Retraction Watch API returned HTTP {response.status_code}"
@@ -95,7 +105,7 @@ class RetractionAPIClient:
             ) from exc
 
         if response.status_code == 404:
-            raise RetractionAPINotFoundError("Resource not found")
+            raise self._not_found(response)
         if response.is_error:
             raise RetractionAPIError(
                 f"Retraction Watch API returned HTTP {response.status_code}"
@@ -189,6 +199,13 @@ class RetractionAPIClient:
             ArticleDetail,
             await self._get(f"/lookup/pubmed/{pubmed_id}"),
         )
+
+    async def lookup_notices(
+        self, *, doi: str | None = None, pubmed_id: int | None = None
+    ) -> NoticeHistoryResponse:
+        params = {key: value for key, value in {"doi": doi, "pubmed_id": pubmed_id}.items() if value is not None}
+        data = await self._get("/lookup/notices", params=params)
+        return self._model(NoticeHistoryResponse, data)
 
     async def batch_lookup(
         self,

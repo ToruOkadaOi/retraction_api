@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     debug: bool = False
     api_title: str = "Retraction Watch API"
     api_version: str = "0.2.1"
-    cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    cors_origins: str = "http://localhost:3000,http://localhost:8000,https://toruokadaoi.github.io,https://retraction-watch-data.onrender.com"
 
     @property
     def allowed_origins(self) -> list[str]:

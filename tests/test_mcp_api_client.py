@@ -51,10 +51,12 @@ def api_response(request: httpx.Request) -> httpx.Response:
             200,
             json={"items": [ARTICLE_SUMMARY], "total": 1, "skip": 0, "limit": 20},
         )
-    if path == "/lookup/batch":
+    if path in {"/lookup/batch", "/lookup/notices"}:
         return httpx.Response(
             200,
             json={
+                **({"identifier_type": "doi"} if path == "/lookup/notices" else {}),
+                "source_sha256": "a" * 64,
                 "screened_count": 1,
                 "retracted_count": 1,
                 "not_found_count": 0,
@@ -301,7 +303,7 @@ async def test_api_client_reports_not_found():
         transport=httpx.MockTransport(lambda request: httpx.Response(404, request=request)),
     )
 
-    with pytest.raises(RetractionAPINotFoundError, match="Article not found"):
+    with pytest.raises(RetractionAPINotFoundError, match="Resource not found"):
         await client.get_article(999)
 
 

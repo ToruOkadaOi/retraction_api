@@ -9,7 +9,15 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
 from app.homepages import MCP_HOMEPAGE
-from app.validation import BatchDOIs, BatchPMIDs, DOIText, FilterText, NameText, SearchText
+from app.validation import (
+    BatchDOIs,
+    BatchPMIDs,
+    DOIText,
+    FilterText,
+    NameText,
+    PositivePMID,
+    SearchText,
+)
 from mcp_server.api_client import RetractionAPIClient, RetractionAPIError
 from mcp_server.config import settings
 
@@ -141,7 +149,7 @@ async def get_article(record_id: Annotated[int, Field(gt=0)]) -> dict[str, Any]:
 async def lookup_article_by_doi(
     doi: DOIText,
 ) -> dict[str, Any]:
-    """Get full article details by DOI. Matches either the original paper DOI or the retraction notice DOI."""
+    """Get full article details by DOI. Returns one record; use lookup_notice_history for all matches."""
     return _dump(await api_client.lookup_by_doi(doi))
 
 
@@ -149,8 +157,19 @@ async def lookup_article_by_doi(
 async def lookup_article_by_pubmed(
     pubmed_id: Annotated[int, Field(gt=0, description="Publication or retraction PubMed ID")],
 ) -> dict[str, Any]:
-    """Get full article details by PubMed ID. Matches either the original paper PMID or the retraction notice PMID."""
+    """Get full article details by PubMed ID. Returns one record; use lookup_notice_history for all matches."""
     return _dump(await api_client.lookup_by_pubmed(pubmed_id))
+
+
+@mcp.tool()
+async def lookup_notice_history(
+    doi: DOIText | None = None,
+    pubmed_id: PositivePMID | None = None,
+) -> dict[str, Any]:
+    """Return all matching notices oldest first, with match roles and source CSV hash. Supply exactly one identifier."""
+    if (doi is None) == (pubmed_id is None):
+        raise ValueError("Provide exactly one of doi or pubmed_id")
+    return _dump(await api_client.lookup_notices(doi=doi, pubmed_id=pubmed_id))
 
 
 @mcp.tool()
@@ -160,7 +179,8 @@ async def batch_check_citations(
 ) -> dict[str, Any]:
     """Screen at most 200 total DOIs and PubMed IDs per call (including duplicates). Split larger lists into batches.
 
-    Returns matching notice records and counts by notice type, plus identifiers not found.
+    Returns matching notice records with identifier roles, counts by notice type, and identifiers not found.
+    Compare source_sha256 across batches before merging results.
     Retractions, corrections, expressions of concern, and reinstatements remain distinct.
     Counts refer to notice records, not the current status of a paper; no match does not
     establish that a paper is reliable. DOI matching and counts ignore case and duplicates.
@@ -352,10 +372,10 @@ def investigate_scientific_misconduct(topic_or_allegation: str) -> str:
         "3. If specific papers or DOIs emerge, check for community whistleblower reports with `get_pubpeer_evidence`.\n"
         "4. If specific authors or institutions are named, generate an investigative profile with `generate_integrity_dossier`.\n"
         "5. Synthesize a comprehensive investigative briefing:\n"
-        "   - Summary of the misconduct pattern (e.g. image manipulation, paper mill, fake reviewers).\n"
-        "   - Key institutions and researchers involved.\n"
+        "   - Recorded notice patterns, distinguishing listed reasons, allegations, and documented findings.\n"
+        "   - Listed institutions and researchers whose identities are supported by the sources.\n"
         "   - Formal actions taken (university inquiry conclusions, journal retraction notices).\n"
-        "   - Links to community evidence and PubPeer threads where available."
+        "   - Source links, distinguishing PubPeer search links from publication threads."
     )
 
 
@@ -365,8 +385,12 @@ def screen_bibliography(citations_text: str) -> str:
     """Screen citations or a bibliography against the Retraction Watch database."""
     return (
         "Please screen the following bibliography for retracted articles, expressions of concern, "
-        "or corrections. Extract all DOIs and PubMed IDs from the text, call the `batch_check_citations` "
-        "tool with the extracted identifiers, and present a structured audit report with:\n"
+        "corrections, or reinstatements. Extract DOIs and positive PubMed IDs and map them to citations. Call the `batch_check_citations` "
+        "tool with at most 200 combined identifiers per request. Deduplicate identifiers before batching. "
+        "Merge records by record_id only within the same source_sha256. If hashes differ, "
+        "retry affected batches or report separate snapshots. Report missing hashes as unverified provenance. "
+        "Separate failed requests, unresolved citations, and screened identifiers with no match. "
+        "Include source_sha256 and present a structured audit report with:\n"
         "1. Summary: Unique identifiers screened, matched identifiers, identifiers not found, and matched notice records by type.\n"
         "2. Matching Notices: Title, journal, notice type, date, reasons, and identifiers. Distinguish retractions, corrections, expressions of concern, and reinstatements.\n"
         "3. Interpretation: A missing match is not proof of reliability. These are notice records, not a resolved current-status determination; review all notices, including reinstatements, before recommending action.\n\n"
@@ -395,7 +419,7 @@ def journal_reliability_audit(journal_name: str) -> str:
         "1. Call `get_journal_profile` to review total retractions, annual trajectories, and top reasons.\n"
         "2. Call `analyze_retraction_timeline` with the journal name to inspect time-to-retraction velocity.\n"
         "3. Call `detect_retraction_clusters` to compare journal-year counts with the preceding three calendar years; note partial years and avoid treating count ratios as statistical significance.\n"
-        "4. Summarize whether retractions appear to be rigorous post-publication self-policing or systemic vulnerability."
+        "4. Report observed patterns and coverage limits. Counts do not measure publication-adjusted rates or reliability. Identify claims that need independent evidence."
     )
 
 

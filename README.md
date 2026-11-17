@@ -86,6 +86,7 @@ Results distinguish retractions from other notice types. A missing match does no
 | `get_article` | Full article details by record ID (including latency and `pubpeer_url`) |
 | `lookup_article_by_doi` | Full article details by DOI (matches original paper DOI or retraction notice DOI) |
 | `lookup_article_by_pubmed` | Full article details by PubMed ID (matches original paper PMID or retraction PMID) |
+| `lookup_notice_history` | All notices matching a single DOI or PMID, in date order, with identifier roles and snapshot hash |
 | `batch_check_citations` | Screen unique DOIs/PMIDs; return matching notice records, counts by notice type, and identifiers not found |
 | `search_articles` | Ranked, paginated full-text search summaries |
 | `search_investigation_notes` | Search full investigation narratives, institutional committee findings, and whistleblower accounts |
@@ -177,8 +178,9 @@ The API image includes a validated database built from the CSV. Rebuild the imag
 |---|---|
 | `GET /articles` | Filter and paginate article summaries |
 | `GET /articles/{record_id}` | Full record details |
-| `GET /lookup/doi/{doi}` | Look up an original paper or notice DOI |
-| `GET /lookup/pubmed/{pubmed_id}` | Look up an original paper or notice PubMed ID |
+| `GET /lookup/doi/{doi}` | One matching record by DOI, using the lowest record ID |
+| `GET /lookup/pubmed/{pubmed_id}` | One matching record by PubMed ID, using the lowest record ID |
+| `GET /lookup/notices` | All matching notices for one `doi` or `pubmed_id`, oldest first, undated last |
 | `POST /lookup/batch` | Screen up to 200 combined DOIs and PubMed IDs |
 | `GET /lookup/pubpeer` | Find a PubPeer publication or search link |
 | `GET /search?q=...` | Full-text search |
@@ -189,7 +191,7 @@ The API image includes a validated database built from the CSV. Rebuild the imag
 | `GET /dataset` | Source snapshot and import details |
 | `GET /health` · `GET /ready` | Connectivity and dataset readiness |
 
-Paginated endpoints accept `skip` and `limit`, with at most 100 records per page. Batch results contain `records`, `counts_by_nature`, and `not_found_count`; `retracted_count` counts only retraction notices.
+Paginated endpoints accept `skip` and `limit`, with at most 100 records per page. Each screening response includes `source_sha256` when import metadata is available. Compare hashes before merging results across batches or with the graph. Records have structured `identifier_matches` and retain the existing `matched_by` text. Batch results contain `records`, `counts_by_nature`, and `not_found_count`; `retracted_count` counts only retraction notices.
 
 ## Development
 

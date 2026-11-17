@@ -136,3 +136,43 @@ class TestLookup:
         assert client.get("/articles/1").json()["pubpeer_url"] == url
 
 
+
+
+def test_notice_history_returns_all_matches_with_roles_and_snapshot(client):
+    from datetime import date
+
+    from app.models import DatasetImport, Retraction
+    from tests.conftest import TestingSessionLocal
+
+    digest = "a" * 64
+    with TestingSessionLocal() as db:
+        db.add(DatasetImport(
+            id=1, source_filename="fixture.csv", source_sha256=digest,
+            imported_at="2026-11-18T00:00:00Z", record_count=3, api_version="0.2.1",
+        ))
+        db.add(Retraction(
+            record_id=3, title="Earlier correction", journal="Test Journal", paywalled="No",
+            retraction_nature="Correction", retraction_date=date(2019, 1, 1),
+            original_paper_doi="10.1000/ORIGINAL.DOI", original_paper_pubmed_id=87654321,
+        ))
+        db.commit()
+
+    response = client.get("/lookup/notices", params={"doi": "10.1000/original.doi"})
+    assert response.status_code == 200
+    history = response.json()
+    assert history["source_sha256"] == digest
+    assert history["identifier_type"] == "doi"
+    assert [row["record_id"] for row in history["records"]] == [3, 1]
+    assert history["counts_by_nature"] == {"Correction": 1, "Retraction": 1}
+    assert history["records"][0]["identifier_matches"] == [
+        {"kind": "original_paper_doi", "identifier": "10.1000/original.doi"}
+    ]
+    batch = client.post("/lookup/batch", json={"pubmed_ids": [87654321, 12345678]}).json()
+    assert batch["source_sha256"] == digest
+    assert batch["records"][0]["identifier_matches"] == [
+        {"kind": "original_paper_pmid", "identifier": 87654321},
+        {"kind": "retraction_pmid", "identifier": 12345678},
+    ]
+    assert client.get("/lookup/doi/10.1000/original.doi").json()["record_id"] == 1
+    assert client.get("/lookup/notices", params={"pubmed_id": 999}).json()["records"] == []
+    assert client.get("/lookup/notices", params={"doi": "10.1000/original.doi", "pubmed_id": 999}).status_code == 422

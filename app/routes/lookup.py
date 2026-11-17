@@ -1,22 +1,25 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.dependencies import get_db
-from app.models import Retraction
+from app.models import DatasetImport, Retraction
 from app.notices import count_notice_types
 from app.schemas import (
     ArticleDetail,
     BatchLookupRequest,
     BatchLookupResponse,
     BatchRetractionItem,
+    IdentifierMatch,
+    IdentifierMatchKind,
+    NoticeHistoryResponse,
     PubPeerEvidence,
 )
 from app.serializers import build_article_detail, compute_latency_days
 from app.taxonomy import extract_pubpeer_url
-from app.validation import DOIText
+from app.validation import DOIText, PositivePMID
 
 router = APIRouter(prefix="/lookup", tags=["lookup"])
 
@@ -30,6 +33,7 @@ def lookup_by_doi(doi: DOIText, db: Session = Depends(get_db)) -> ArticleDetail:
             (func.lower(func.trim(Retraction.retraction_doi)) == clean_doi)
             | (func.lower(func.trim(Retraction.original_paper_doi)) == clean_doi)
         )
+        .order_by(Retraction.record_id)
         .first()
     )
     if not r:
@@ -45,6 +49,7 @@ def lookup_by_pubmed(pubmed_id: int, db: Session = Depends(get_db)) -> ArticleDe
             (Retraction.retraction_pubmed_id == pubmed_id)
             | (Retraction.original_paper_pubmed_id == pubmed_id)
         )
+        .order_by(Retraction.record_id)
         .first()
     )
     if not r:
@@ -57,6 +62,36 @@ def batch_lookup(
     request: BatchLookupRequest,
     db: Session = Depends(get_db),
 ) -> BatchLookupResponse:
+    return screen_identifiers(request, db)
+
+
+@router.get("/notices")
+def lookup_notices(
+    doi: Annotated[DOIText | None, Query()] = None,
+    pubmed_id: Annotated[PositivePMID | None, Query()] = None,
+    db: Session = Depends(get_db),
+) -> NoticeHistoryResponse:
+    """Return every matching notice, oldest first, with undated notices last."""
+    if (doi is None) == (pubmed_id is None):
+        raise HTTPException(422, "Provide exactly one of doi or pubmed_id")
+    result = screen_identifiers(
+        BatchLookupRequest(
+            dois=[doi] if doi is not None else [],
+            pubmed_ids=[pubmed_id] if pubmed_id is not None else [],
+        ),
+        db,
+    )
+    result.records.sort(key=lambda row: (row.retraction_date is None, row.retraction_date, row.record_id))
+    return NoticeHistoryResponse(identifier_type="doi" if doi is not None else "pmid", **result.model_dump())
+
+
+def screen_identifiers(request: BatchLookupRequest, db: Session) -> BatchLookupResponse:
+    connection = db.connection()
+    # SQLite's legacy driver mode does not start a transaction for SELECTs.
+    if connection.dialect.name == "sqlite" and not connection.connection.driver_connection.in_transaction:
+        db.execute(text("BEGIN"))
+    metadata = db.get(DatasetImport, 1)
+
     # Match and count canonical identifiers; keep the first spelling for display.
     doi_lookup_map: dict[str, str] = {}
     for doi in request.dois:
@@ -64,7 +99,7 @@ def batch_lookup(
             doi_lookup_map.setdefault(doi.strip().lower(), doi.strip())
     clean_pmids = list(dict.fromkeys(p for p in request.pubmed_ids if p > 0))
 
-    matched_records: dict[int, tuple[Retraction, list[str]]] = {}
+    matched_records: dict[int, tuple[Retraction, list[IdentifierMatch]]] = {}
     matched_dois: set[str] = set()
     matched_pmids: set[int] = set()
 
@@ -85,11 +120,11 @@ def batch_lookup(
             ret_lower = r.retraction_doi.strip().lower() if r.retraction_doi else None
             if orig_lower in doi_lookup_map:
                 orig_input = doi_lookup_map[orig_lower]
-                matches.append(f"original_paper_doi: {orig_input}")
+                matches.append(IdentifierMatch(kind=IdentifierMatchKind.ORIGINAL_DOI, identifier=orig_input))
                 matched_dois.add(orig_lower)
             if ret_lower in doi_lookup_map:
                 ret_input = doi_lookup_map[ret_lower]
-                matches.append(f"retraction_doi: {ret_input}")
+                matches.append(IdentifierMatch(kind=IdentifierMatchKind.NOTICE_DOI, identifier=ret_input))
                 matched_dois.add(ret_lower)
 
             if r.record_id in matched_records:
@@ -110,10 +145,10 @@ def batch_lookup(
         for r in pmid_records:
             matches = []
             if r.original_paper_pubmed_id in clean_pmids:
-                matches.append(f"original_paper_pmid: {r.original_paper_pubmed_id}")
+                matches.append(IdentifierMatch(kind=IdentifierMatchKind.ORIGINAL_PMID, identifier=r.original_paper_pubmed_id))
                 matched_pmids.add(r.original_paper_pubmed_id)
             if r.retraction_pubmed_id in clean_pmids:
-                matches.append(f"retraction_pmid: {r.retraction_pubmed_id}")
+                matches.append(IdentifierMatch(kind=IdentifierMatchKind.NOTICE_PMID, identifier=r.retraction_pubmed_id))
                 matched_pmids.add(r.retraction_pubmed_id)
 
             if r.record_id in matched_records:
@@ -135,7 +170,8 @@ def batch_lookup(
             retraction_doi=r.retraction_doi,
             original_paper_pubmed_id=r.original_paper_pubmed_id,
             retraction_pubmed_id=r.retraction_pubmed_id,
-            matched_by="; ".join(sorted(set(matches))),
+            matched_by="; ".join(sorted(f"{match.kind.value}: {match.identifier}" for match in matches)),
+            identifier_matches=matches,
             reasons=[reason.reason for reason in r.reasons],
         )
         for _, (r, matches) in sorted(matched_records.items())
@@ -148,6 +184,7 @@ def batch_lookup(
     counts_by_nature = count_notice_types(item.retraction_nature for item in retraction_items)
 
     return BatchLookupResponse(
+        source_sha256=metadata.source_sha256 if metadata else None,
         screened_count=total_screened,
         matched_identifier_count=len(matched_dois) + len(matched_pmids),
         not_found_count=len(unmatched_dois) + len(unmatched_pmids),
@@ -180,7 +217,7 @@ def get_pubpeer_evidence(
         article = query.filter(
             (func.lower(func.trim(Retraction.retraction_doi)) == clean_doi)
             | (func.lower(func.trim(Retraction.original_paper_doi)) == clean_doi)
-        ).first()
+        ).order_by(Retraction.record_id).first()
 
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")

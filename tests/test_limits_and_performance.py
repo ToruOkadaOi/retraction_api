@@ -106,7 +106,7 @@ def test_summaries_and_batch_queries_do_not_grow_per_record(client):
     with sql_queries() as statements:
         data = client.post("/lookup/batch", json={"dois": [f"10.1000/{i}" for i in range(100, 300)]}).json()
     assert data["matched_record_count"] == 200
-    assert len(statements) <= 2
+    assert len(statements) <= 4  # Read transaction, snapshot metadata, records, and reasons
 
 
 def test_clusters_use_all_records_and_a_three_year_baseline(client):

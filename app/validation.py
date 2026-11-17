@@ -10,6 +10,7 @@ NameText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2,
 FilterText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
 DOIText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
 BatchDOI = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2048)]
+PositivePMID = Annotated[int, Field(gt=0, le=2**63 - 1)]
 BatchPMID = Annotated[int, Field(ge=-(2**63), le=2**63 - 1)]
 BatchDOIs = Annotated[list[BatchDOI], Field(max_length=MAX_BATCH_IDENTIFIERS)]
 BatchPMIDs = Annotated[list[BatchPMID], Field(max_length=MAX_BATCH_IDENTIFIERS)]
